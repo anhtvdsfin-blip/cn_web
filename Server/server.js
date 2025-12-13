@@ -76,6 +76,15 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// API Routes
+app.use("/api/auth", authRoutes);
+app.use('/api/users', userRoutes);
+app.use("/api/match", matchRoutes);  // NEW
+app.use('/api/findlove', findLoveRoutes);
+app.use('/api', conversationRoutes);
+app.use("/api", postRoutes);
+app.use("/api", notifRouter);  
+
 // Phục vụ tệp tĩnh từ dist
 app.use(express.static(path.join(__dirname, "../my-react-app/dist")));  // đổi "client" thành thư mục front-end của bạn
 
@@ -98,14 +107,6 @@ connectDB();
   }
 })();
 
-// API Routes
-app.use("/api/auth", authRoutes);
-app.use('/api/users', userRoutes);
-app.use("/api/match", matchRoutes);  // NEW
-app.use('/api/findlove', findLoveRoutes);
-app.use('/api', conversationRoutes);
-app.use("/api", postRoutes);
-app.use("/api", notifRouter);  
 
 // Socket.IO logic
 initMatchSocket(io);

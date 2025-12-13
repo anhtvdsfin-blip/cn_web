@@ -1,3 +1,5 @@
+import toast, { Toaster } from 'react-hot-toast';
+import.meta.env.VITE_API_URL;
 import { useEffect, useMemo, useState } from 'react';
 import { Heart, RotateCcw, X as XIcon } from 'lucide-react';
 import OtherProfileCard from '../components/OtherProfileCard';
@@ -18,6 +20,10 @@ export default function Home() {
   const [matchQueue, setMatchQueue] = useState([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [history, setHistory] = useState([]);
+  const [matchQueue] = useState(SAMPLE_PROFILES);
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const [showMenu, setShowMenu] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [isLoadingDeck, setIsLoadingDeck] = useState(Boolean(API_URL && userId));
   const [deckError, setDeckError] = useState('');
   const [isProcessingAction, setIsProcessingAction] = useState(false);
@@ -38,6 +44,9 @@ export default function Home() {
   }, [storedUser?.preferredAgeRange, storedUser?.preferences?.ageRange]);
 
   useEffect(() => {
+    setPhotoIndex(0);
+    setShowMenu(false);
+  }, [activeIndex]);
     if (!API_URL || !userId) {
       return;
     }
@@ -156,6 +165,92 @@ export default function Home() {
     }
   };
 
+  const handleNextPhoto = () => {
+    if (photos.length <= 1) return;
+    setPhotoIndex((prev) => (prev + 1) % photos.length);
+  };
+
+  const handlePrevPhoto = () => {
+    if (photos.length <= 1) return;
+    setPhotoIndex((prev) => (prev - 1 + photos.length) % photos.length);
+  };
+
+  const loadNextProfile = () => {
+    if (activeIndex + 1 >= matchQueue.length) {
+      setActiveIndex(matchQueue.length);
+      return;
+    } else {
+      setActiveIndex((prev) => prev + 1);
+    }
+  }
+
+  const handleBlockOrReport = async (type) => {
+    if (!activeProfile || actionLoading) return;
+    const targetId = activeProfile.id; // ID của người bị chặn/báo cáo
+    const blockerId = storedUser?.id; // ID của người đang đăng nhập
+
+    // 1. Kiểm tra ID người dùng
+    if (!blockerId) {
+        toast.error("Vui lòng đăng nhập để thực hiện hành động này.");
+        return;
+    }
+    
+    // 2. Confirmation Modal cho hành động BLOCK
+    if (type === 'block') {
+        const confirmBlock = window.confirm(
+            `Bạn có chắc chắn muốn CHẶN ${activeProfile.name} không? Bạn sẽ không bao giờ thấy hồ sơ này nữa.`
+        );
+        if (!confirmBlock) {
+            setShowMenu(false);
+            return;
+        }
+    }
+    
+    // Thiết lập Endpoint và Data
+    const endpointPath = type === 'block' ? `block/${targetId}` : `report/${targetId}`;
+    const apiUrl = `${API_URL}/api/users/${endpointPath}`;
+    
+    // Controller Back-end sử dụng 'blockerId' hoặc 'reporterId' trong req.body
+    const requestBody = {
+        blockerId: blockerId, // Dùng cho Block
+        reporterId: blockerId, // Dùng cho Report (route: /api/users/:userId/report)
+        reason: type === 'report' ? prompt("Vui lòng cho biết lý do báo cáo (Không bắt buộc):") : undefined,
+    };
+
+    setActionLoading(true);
+    setShowMenu(false);
+
+    try {
+        const res = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody),
+        });
+
+        if (!res.ok) {
+            const errorData = await res.json();
+            throw new Error(errorData.message || 'Yêu cầu thất bại từ Server');
+        }
+
+        // Xử lý thành công
+        const message = type === 'block' ? `Đã chặn ${activeProfile.name} thành công.` : `Đã gửi báo cáo về ${activeProfile.name}.`;
+        
+        // ✨ HIỂN THỊ TOAST ✨
+        toast.success(message); 
+        
+        setHistory((prev) => [{ profile: activeProfile, action: type }, ...prev.slice(0, 4)]);
+        loadNextProfile();
+
+    } catch (error) {
+        console.error("API Error:", error);
+        
+        // 🚨 TOAST LỖI 🚨
+        toast.error(`Thao tác thất bại: ${error.message || 'Lỗi kết nối Server.'}`);
+        
+    } finally {
+        setActionLoading(false);
+    }
+};
   const statusMessage = useMemo(() => {
     if (!API_URL) {
       return 'Thiếu cấu hình API. Vui lòng kiểm tra VITE_API_URL.';
@@ -186,6 +281,8 @@ export default function Home() {
   }, [API_URL, actionError, activeProfile, activeIndex, deckError, history, isLoadingDeck, matchQueue.length, userId]);
 
   return (
+    <>
+    <Toaster position="top-right" />
     <div className="min-h-screen bg-[#fff5f8]">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col items-center px-4 pt-24 pb-16">
         <div className="flex w-full max-w-md flex-col items-center text-center text-sm text-rose-500/80">
@@ -215,15 +312,121 @@ export default function Home() {
 
             <div className="flex w-full max-w-md flex-col items-center gap-10">
               <div className="relative w-full">
-                {isLoadingDeck ? (
-                  <div className="flex h-[82vh] flex-col items-center justify-center gap-4 rounded-[36px] border border-rose-100 bg-white/90 p-10 text-center shadow-[0_30px_80px_-60px_rgba(233,114,181,0.65)]">
-                    <div className="h-12 w-12 animate-spin rounded-full border-2 border-rose-200 border-t-rose-400" aria-hidden="true" />
-                    <p className="text-sm font-medium text-rose-500/90">Đang tìm những nhịp tim phù hợp cho bạn...</p>
-                  </div>
-                ) : deckError && !activeProfile ? (
-                  <div className="flex h-[82vh] flex-col items-center justify-center gap-4 rounded-[36px] border border-rose-100 bg-white/90 p-10 text-center shadow-[0_30px_80px_-60px_rgba(233,114,181,0.65)]">
-                    <div className="rounded-full bg-white/60 p-6 text-rose-400 shadow-inner">
-                      <Heart className="h-12 w-12" />
+                <div className="relative mx-auto overflow-hidden rounded-[36px] border border-rose-100 bg-white/90 shadow-[0_30px_80px_-60px_rgba(233,114,181,0.65)]">
+                  {activeProfile ? (
+                    <article className="relative h-full min-h-[78vh] max-h-[84vh] w-full aspect-[9/16]">
+                      <div className="absolute top-4 right-4 z-30">
+                        <div className="relative">
+                          <button
+                            onClick={() => setShowMenu((s) => !s)}
+                            aria-label="More options"
+                            className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-slate-700 shadow-sm hover:scale-105"
+                          >
+                            <MoreHorizontal className="h-5 w-5" />
+                          </button>
+
+                          {showMenu && (
+                            <div className="absolute right-0 mt-2 w-40 rounded-lg border border-rose-100 bg-white shadow-lg">
+                              <button
+                                onClick={() => handleBlockOrReport('report')}
+                                disabled={actionLoading}
+                                className="w-full px-4 py-2 text-left text-sm hover:bg-rose-50 disabled:opacity-60"
+                              >
+                                Báo cáo (Report)
+                              </button>
+                              <button
+                                onClick={() => handleBlockOrReport('block')}
+                                disabled={actionLoading}
+                                className="w-full px-4 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-60"
+                              >
+                                Chặn (Block)
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {photos.length > 0 && (
+                        <img
+                          src={photos[photoIndex]}
+                          alt={activeProfile.name}
+                          loading="lazy"
+                          className="absolute inset-0 h-full w-full object-cover"
+                        />
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-rose-950/70 via-rose-900/25 to-transparent" />
+
+                      {photos.length > 1 && (
+                        <div className="absolute top-6 left-1/2 flex -translate-x-1/2 gap-2">
+                          {photos.map((_, index) => (
+                            <span
+                              key={`${activeProfile.id}-indicator-${index}`}
+                              className={`h-[3px] w-10 rounded-full transition ${
+                                index === photoIndex ? 'bg-white/90' : 'bg-white/40'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {photos.length > 1 && (
+                        <>
+                          <button
+                            onClick={handlePrevPhoto}
+                            aria-label="Xem ảnh trước"
+                            className="absolute inset-y-0 left-0 w-1/3 rounded-l-[36px] bg-gradient-to-r from-black/10 to-transparent text-white opacity-0 transition hover:opacity-90"
+                          />
+                          <button
+                            onClick={handleNextPhoto}
+                            aria-label="Xem ảnh tiếp theo"
+                            className="absolute inset-y-0 right-0 w-1/3 rounded-r-[36px] bg-gradient-to-l from-black/10 to-transparent text-white opacity-0 transition hover:opacity-90"
+                          />
+                        </>
+                      )}
+
+                      <div className="absolute inset-x-0 bottom-0 p-7 text-white md:p-8">
+                        <div className="flex flex-wrap items-end gap-3 text-[2.5rem] font-semibold tracking-tight md:text-[2.8rem]">
+                          <h2>{activeProfile.name}</h2>
+                          <span className="rounded-full bg-white/15 px-3 py-1 text-lg font-medium">{activeProfile.age}</span>
+                        </div>
+
+                        <div className="mt-5 flex flex-wrap items-center gap-3 text-sm font-semibold text-teal-100">
+                          <span className="flex items-center gap-2 rounded-full bg-white/20 px-4 py-2 text-teal-100">
+                            <GraduationCap className="h-4 w-4 text-teal-100" />
+                            {activeProfile.major} · {activeProfile.classYear}
+                          </span>
+                          <span className="flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-rose-50/90">
+                            <MapPin className="h-4 w-4" />
+                            {activeProfile.location} · {activeProfile.distance}
+                          </span>
+                        </div>
+
+                        <p className="mt-6 max-w-xl text-base leading-relaxed text-rose-50/95">{activeProfile.bio}</p>
+
+                        <div className="mt-6 flex flex-wrap gap-2">
+                          {activeProfile.interests.map((interest) => (
+                            <span
+                              key={interest}
+                              className="flex items-center gap-2 rounded-xl border border-teal-200/70 bg-white/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-teal-100/90"
+                            >
+                              <Sparkles className="h-3.5 w-3.5" />
+                              {interest}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </article>
+                  ) : (
+                    <div className="flex h-[82vh] flex-col items-center justify-center gap-5 text-center">
+                      <div className="rounded-full bg-white/60 p-6 text-rose-400 shadow-inner">
+                        <Heart className="h-12 w-12" />
+                      </div>
+                      <div className="max-w-md text-rose-500">
+                        <h3 className="text-2xl font-semibold">Bạn đã khám phá tất cả hôm nay rồi ✨</h3>
+                        <p className="mt-3 text-sm leading-relaxed text-rose-400">
+                          Hãy quay lại vào lúc khác để gặp thêm những tâm hồn đẹp nhé!
+                        </p>
+                      </div>
                     </div>
                     <div className="max-w-md text-rose-500">
                       <h3 className="text-2xl font-semibold">Không thể tải profile ✨</h3>
@@ -284,7 +487,7 @@ export default function Home() {
                         key={`${profile.id}-${action}`}
                         className="rounded-full bg-white/60 px-3 py-1 backdrop-blur-sm"
                       >
-                        {profile.name} · {action === 'like' ? 'đã nhận trái tim' : 'đã lướt qua'}
+                        {profile.name} · {action === 'like' ? 'đã nhận trái tim' : action === 'block' ? 'đã bị chặn' : action === 'report' ? 'đã bị báo cáo' : 'đã lướt qua'}
                       </span>
                     ))}
                   </div>
@@ -318,6 +521,8 @@ export default function Home() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </>
+  
   );
 }

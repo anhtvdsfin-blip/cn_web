@@ -122,7 +122,12 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  
+
+  // Users that this user has blocked
+  blockedUsers: {
+    type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    default: []
+  },
   
   createdAt: { 
     type: Date, 

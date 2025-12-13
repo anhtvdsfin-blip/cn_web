@@ -16,9 +16,26 @@ export const initChatSocket = (io) => {
   io.on("connection", (socket) => {
     console.log(`✅ User connected: ${socket.id}`);
 
+
+// ==========================================
+// AUTH USER (fix userId undefined)
+// ==========================================
+socket.on("auth_user", ({ userId }) => {
+  if (!userId) {
+    console.log("❌ auth_user received empty userId");
+    return;
+  }
+
+  socket.data.userId = userId.toString();
+  socket.join(`user_${userId}`);
+  console.log(`🔐 Authenticated user: ${socket.data.userId}`);
+});
+
     // ==========================================
     // 1. TÌM PARTNER
     // ==========================================
+
+
     socket.on("find_partner", async (userData) => {
       try {
         console.log(`🔍 ${userData.name} đang tìm partner...`);
@@ -327,7 +344,7 @@ export const initChatSocket = (io) => {
         }
 
         const userId = socket.data.userId;
-        if (!conversation.participants.includes(userId)) {
+        if (!conversation.participants.some(id => id.toString() === userId.toString())) {
           socket.emit("error", { message: "Unauthorized" });
           return;
         }
@@ -350,13 +367,33 @@ export const initChatSocket = (io) => {
           timestamp: new Date()
         };
         conversation.updatedAt = new Date();
-
-        // Update unread count cho partner
-        const partnerId = conversation.participants.find(p => p.toString() !== userId);
-        const currentUnread = conversation.unreadCount.get(partnerId.toString()) || 0;
-        conversation.unreadCount.set(partnerId.toString(), currentUnread + 1);
-
         await conversation.save();
+
+        // // Update unread count cho partner
+        // const partnerId = conversation.participants.find(p => p.toString() !== userId);
+        // const currentUnread = conversation.unreadCount.get(partnerId.toString()) || 0;
+        // conversation.unreadCount.set(partnerId.toString(), currentUnread + 1);
+
+        // await conversation.save();
+        // Update unread count cho partner
+        const userIdStr = userId.toString();
+
+        const participantIds = conversation.participants.map(p =>
+          p.toString()
+        );
+
+        const partnerId = participantIds.find(id => id !== userIdStr);
+
+        if (!partnerId) {
+          console.error("❌ partnerId is undefined in send_message");
+        } else {
+          if (!conversation.unreadCount) {
+            conversation.unreadCount = new Map();
+          }
+
+          const currentUnread = conversation.unreadCount.get(partnerId) || 0;
+          conversation.unreadCount.set(partnerId, currentUnread + 1);
+        }
 
         // Emit tin nhắn cho tất cả participants kèm tempId để client thay thế tin tạm
         conversation.participants.forEach(participantId => {
@@ -383,8 +420,13 @@ export const initChatSocket = (io) => {
       const userId = socket.data.userId;
       Conversation.findById(conversationId).then(conv => {
         if (conv) {
-          const partnerId = conv.participants.find(p => p.toString() !== userId);
-          io.to(`user_${partnerId}`).emit("partner_typing", { conversationId, isTyping });
+          const partnerId = conv.participants
+          .map(p => p.toString())
+          .find(id => id !== userId.toString());
+
+          if (partnerId) {
+            io.to(`user_${partnerId}`).emit("partner_typing", { conversationId, isTyping });
+          }
         }
       });
     });
@@ -398,7 +440,8 @@ export const initChatSocket = (io) => {
         const conversation = await Conversation.findById(conversationId);
         
         if (conversation) {
-          conversation.unreadCount.set(userId, 0);
+          conversation.unreadCount.set(userId.toString(), 0);
+
           await conversation.save();
 
           // Mark messages as read
