@@ -73,7 +73,14 @@ export const notificationService = {
 
       const notifications = await Notification.find(query)
         .populate('senderId', 'name avatar')
-        .populate('matchId', 'user1Id user2Id')
+        .populate({
+          path: 'matchId',
+          select: 'user1Id user2Id openingMoveUser1 openingMoveUser2',
+          populate: [
+            { path: 'openingMoveUser1', model: 'OpeningMove', select: 'text category' },
+            { path: 'openingMoveUser2', model: 'OpeningMove', select: 'text category' },
+          ]
+        })
         .sort({ createdAt: -1 })
         .limit(limit)
         .skip(skip)

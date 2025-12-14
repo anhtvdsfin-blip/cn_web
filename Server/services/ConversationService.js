@@ -13,13 +13,18 @@ class ConversationService {
         .sort({ updatedAt: -1 })
         .populate('user1Id', 'name avatar class')
         .populate('user2Id', 'name avatar class')
-        .select('user1Id user2Id lastMessage unreadCount createdAt updatedAt');
+        .populate('openingMoveUser1', 'text category')
+        .populate('openingMoveUser2', 'text category')
+        .select('user1Id user2Id lastMessage unreadCount createdAt updatedAt openingMoveUser1 openingMoveUser2');
 
       // Format data for frontend
       const formatted = matches.map((match) => {
         const isUser1 = match.user1Id._id.toString() === userId;
         const partner = isUser1 ? match.user2Id : match.user1Id;
         const unreadCount = match.unreadCount.get(userId) || 0;
+
+        // Determine partner opening move (if any)
+        const partnerOpeningMove = isUser1 ? match.openingMoveUser2 : match.openingMoveUser1;
 
         return {
           _id: match._id,
@@ -30,7 +35,12 @@ class ConversationService {
           lastMessage: match.lastMessage || null,
           unreadCount,
           updatedAt: match.updatedAt,
-          createdAt: match.createdAt
+          createdAt: match.createdAt,
+          partnerOpeningMove: partnerOpeningMove ? {
+            _id: partnerOpeningMove._id,
+            text: partnerOpeningMove.text,
+            category: partnerOpeningMove.category
+          } : null
         };
       });
 

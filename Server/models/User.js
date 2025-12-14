@@ -116,6 +116,13 @@ const userSchema = new mongoose.Schema({
     default: []
   },
 
+  selectedOpeningMove: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'OpeningMove',
+    default: null,
+    required: false,
+  },
+
   
   // Profile completion status
   profileCompleted: {
