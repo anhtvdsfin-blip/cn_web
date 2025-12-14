@@ -43,7 +43,7 @@ const userSchema = new mongoose.Schema({
     },
     ageRange: {
       min: { type: Number, default: 18 },
-      max: { type: Number, default: 99 }
+      max: { type: Number, default: 26 }
     },
     distance: { type: Number, default: 50 } 
   },
@@ -100,10 +100,27 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: 'Not updated'
   },
+
+  height: {
+    type: Number,
+    default: 0
+  },
+
+  avatar: {
+    type: String,
+    default: ''
+  },
   
   photoGallery: {
     type: [String],
     default: []
+  },
+
+  selectedOpeningMove: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'OpeningMove',
+    default: null,
+    required: false,
   },
 
   
@@ -112,7 +129,12 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  
+
+  // Users that this user has blocked
+  blockedUsers: {
+    type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    default: []
+  },
   
   createdAt: { 
     type: Date, 
@@ -132,32 +154,46 @@ const userSchema = new mongoose.Schema({
 
 userSchema.index({ geoLocation: '2dsphere' });
 userSchema.methods.isProfileComplete = function() {
-  const hasHobbies = Array.isArray(this.hobbies) && this.hobbies.length > 0;
-  const hasStudySubjects = Array.isArray(this.studySubjects) && this.studySubjects.length > 0;
-  const hasDob = this.dob instanceof Date && !Number.isNaN(this.dob.valueOf());
-  const hometownFilled = typeof this.hometown === 'string' && this.hometown.trim() !== '' && this.hometown !== 'Not updated';
-  const locationFilled = typeof this.location === 'string' && this.location !== 'Not updated';
-  const careerFilled = typeof this.career === 'string' && this.career !== 'Not updated';
-  const classYearFilled = typeof this.classYear === 'string' && this.classYear !== 'Not updated';
-  const bioFilled = typeof this.bio === 'string' && this.bio !== 'Not updated' && this.bio.trim().length > 0;
-  const zodiacFilled = typeof this.zodiac === 'string' && this.zodiac !== 'Unknown';
-  const connectionGoalFilled = typeof this.connectionGoal === 'string' && this.connectionGoal !== '';
+  const normalizeString = (value) =>
+    typeof value === 'string' ? value.trim() : '';
 
+  const hasGender = normalizeString(this.gender).length > 0;
+  const hasDob = this.dob instanceof Date && !Number.isNaN(this.dob.valueOf());
+  const hometownFilled = normalizeString(this.hometown) && this.hometown !== 'Not updated';
+  const locationFilled = normalizeString(this.location) && this.location !== 'Not updated';
+  const careerFilled = normalizeString(this.career) && this.career !== 'Not updated';
+  const classYearFilled = normalizeString(this.classYear) && this.classYear !== 'Not updated';
+  const normalizedBio = normalizeString(this.bio);
+  const bioFilled = normalizedBio.length >= 10 && this.bio !== 'Not updated';
+  const hasHobbies = Array.isArray(this.hobbies) && this.hobbies.length > 0;
+  const connectionGoalFilled = normalizeString(this.connectionGoal).length > 0
+    || normalizeString(this.preferences?.connectionGoal).length > 0;
+
+  const hasAvatar = typeof this.avatar === 'string' && normalizeString(this.avatar).length > 0;
+  const hasGallery = Array.isArray(this.photoGallery)
+    && this.photoGallery.some((url) => normalizeString(url).length > 0);
+  const hasVisualIdentity = hasAvatar || hasGallery || normalizeString(this.name).length > 0;
+  const heightValue = typeof this.height === 'number' ? this.height : Number(this.height);
+  const hasHeight = Number.isFinite(heightValue) && heightValue >= 120 && heightValue <= 220;
+
+  const hasLocation = hometownFilled || locationFilled;
   return Boolean(
-    this.gender
+    hasGender
     && hasDob
-    && careerFilled
-    && locationFilled
-    && bioFilled
-    && hasHobbies
-    && hasStudySubjects
-    && typeof this.academicHighlights === 'string' && this.academicHighlights.trim().length > 0
+    && hasLocation
     && connectionGoalFilled
+    && hasHeight
+    && hasVisualIdentity
+    && careerFilled
     && classYearFilled
-    && hometownFilled
-    && zodiacFilled
+    && (bioFilled || hasHobbies)
   );
 };
+
+userSchema.virtual('avatarInitial').get(function() {
+  const normalizedName = typeof this.name === 'string' ? this.name.trim() : '';
+  return normalizedName ? normalizedName.charAt(0).toUpperCase() : '';
+});
 
 userSchema.virtual('age').get(function() {
     if (!this.dob) return null;
@@ -170,6 +206,7 @@ userSchema.virtual('age').get(function() {
     }
     return age;
 });
+
 
 // Thiết lập JSON/Object để bao gồm Virtuals
 userSchema.set('toJSON', { virtuals: true });

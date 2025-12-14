@@ -67,12 +67,19 @@ export default function Register() {
         zodiac: user.zodiac || "Unknown",
         preferences: user.preferences || null,
         lookingFor: user.preferences?.lookingFor || user.lookingFor || "All",
+        height: (() => {
+          const numeric = Number(user.height);
+          if (!Number.isFinite(numeric)) {
+            return null;
+          }
+          const truncated = Math.trunc(numeric);
+          return truncated >= 120 && truncated <= 220 ? truncated : null;
+        })(),
         isProfileComplete: user.isProfileComplete ?? user.profileCompleted ?? false,
       };
 
       sessionStorage.setItem("user", JSON.stringify(userForSession));
       window.dispatchEvent(new Event("userChanged"));
-
       navigate(userForSession.isProfileComplete ? "/feed" : "/complete-profile");
     } catch (err) {
       console.error("❌ Lỗi khi gửi request:", err);

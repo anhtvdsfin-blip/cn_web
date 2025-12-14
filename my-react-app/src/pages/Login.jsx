@@ -56,6 +56,14 @@ export default function Login() {
         zodiac: user.zodiac || "Unknown",
         preferences: user.preferences || null,
         lookingFor: user.preferences?.lookingFor || user.lookingFor || "All",
+        height: (() => {
+          const numeric = Number(user.height);
+          if (!Number.isFinite(numeric)) {
+            return null;
+          }
+          const truncated = Math.trunc(numeric);
+          return truncated >= 120 && truncated <= 220 ? truncated : null;
+        })(),
         isProfileComplete: user.isProfileComplete ?? user.profileCompleted ?? false,
       };
 
@@ -80,6 +88,7 @@ export default function Login() {
 
       window.dispatchEvent(new Event("userChanged"));
 
+      console.log("check userForChat.isProfileComplete", userForChat.isProfileComplete);
       // 🔥 Kiểm tra profile đã hoàn thiện chưa
       if (!userForChat.isProfileComplete) {
         console.log("➡️ Chuyển đến /complete-profile");

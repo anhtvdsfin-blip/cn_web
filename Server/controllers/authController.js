@@ -1,7 +1,7 @@
 // controllers/authController.js
 import httpStatus from 'http-status';
 import catchAsync from '../ultis/CatchAsync.js';
-import { registerUser, loginUser, updateUserProfile, getUserProfile } from '../services/AuthService.js';
+import { registerUser, loginUser } from '../services/AuthService.js';
 
 
 
@@ -61,43 +61,6 @@ export const login = catchAsync(async (req, res) => {
         accessToken: tokens.accessToken 
     });
 });
-
-export const updateProfile = async (req, res) => {
-    try {
-        const { userId, ...profileData } = req.body;
-        if (!userId) {
-            return res.status(httpStatus.BAD_REQUEST).send({ message: 'Thiếu userId.' });
-        }
-
-        const user = await updateUserProfile(userId, profileData);
-
-        res.send({
-            success: true,
-            message: 'Cập nhật profile thành công.',
-            user,
-        });
-    } catch (error) {
-        const status = error.statusCode || httpStatus.BAD_REQUEST;
-        const message = error.message || 'Cập nhật profile thất bại.';
-        res.status(status).send({ message });
-    }
-};
-
-export const getProfile = async (req, res) => {
-    try {
-        const userId = req.params.userId || req.query.userId;
-        if (!userId) {
-            return res.status(httpStatus.BAD_REQUEST).send({ message: 'Thiếu userId.' });
-        }
-
-        const user = await getUserProfile(userId);
-        res.send({ user });
-    } catch (error) {
-        const status = error.statusCode || httpStatus.INTERNAL_SERVER_ERROR;
-        const message = error.message || 'Không thể lấy thông tin hồ sơ.';
-        res.status(status).send({ message });
-    }
-};
 
 export const logout = catchAsync(async (req, res) => {
     // Xóa cookie refreshToken

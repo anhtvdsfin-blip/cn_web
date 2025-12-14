@@ -14,8 +14,14 @@ import matchingService from "./services/MatchingService.js";  // NEW
 import conversationRoutes from './routes/conversationRoutes.js';
 import libraryRoutes from './routes/libraryRoutes.js';
 import { initChatSocket } from './socket/chatSocket.js';
+import { initNotificationSocket } from './socket/notificationSocket.js';
 import postRoutes from './routes/postRoutes.js';
 import { notifRouter } from './routes/notificationRoutes.js';
+import userRoutes from './routes/userRoutes.js';
+import findLoveRoutes from './routes/findLoveRoutes.js';
+import openingMoveRoutes from './routes/openingMoveRoutes.js';
+
+import { initPostSocket } from './socket/postSocket.js';
 
 dotenv.config();
 
@@ -36,6 +42,9 @@ const io = new Server(httpServer, {
     credentials: true
   }
 });
+
+// Store io instance in app for controllers
+app.set('io', io);
 
 
 // Middleware
@@ -67,12 +76,33 @@ app.use(cors({
 
 
 
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Attach io to app for routes to access
+app.use((req, res, next) => {
+  req.io = io;
+  // Add helper to emit notifications to specific user
+  req.emitNotification = (recipientId, data) => {
+    io.to(recipientId.toString()).emit('notification:new', data);
+  };
+  next();
+});
+
+// API Routes
+app.use("/api/auth", authRoutes);
+app.use('/api/users', userRoutes);
+app.use("/api/match", matchRoutes);  // NEW
+app.use('/api/findlove', findLoveRoutes);
+app.use('/api', openingMoveRoutes);
+app.use('/api', conversationRoutes);
+app.use("/api", postRoutes);
+app.use("/api", notifRouter);  
 
 // Phục vụ tệp tĩnh từ dist
 app.use(express.static(path.join(__dirname, "../my-react-app/dist")));  // đổi "client" thành thư mục front-end của bạn
@@ -96,17 +126,12 @@ connectDB();
   }
 })();
 
-// API Routes
-app.use("/api/auth", authRoutes);
-app.use("/api/match", matchRoutes);  // NEW
-app.use('/api', conversationRoutes);
-app.use('/api/library', libraryRoutes);
-app.use("/api", postRoutes);
-app.use("/api", notifRouter);  
 
 // Socket.IO logic
 initMatchSocket(io);
 initChatSocket(io);
+initPostSocket(io);
+initNotificationSocket(io);
 
 // Health check
 app.get("/", (req, res) => {
