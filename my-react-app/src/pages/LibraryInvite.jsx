@@ -9,7 +9,6 @@ export default function LibraryInvite() {
   const [rooms, setRooms] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalRoom, setModalRoom] = useState(null);
-  const [modalEmail, setModalEmail] = useState('');
   const [selectedUserId, setSelectedUserId] = useState('');
   const [matchedUsers, setMatchedUsers] = useState([]);
   const [loadingMatches, setLoadingMatches] = useState(false);
