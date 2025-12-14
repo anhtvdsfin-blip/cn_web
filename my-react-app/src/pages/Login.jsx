@@ -10,7 +10,8 @@ export default function Login() {
   const [message, setMessage] = useState("");
   const navigate = useNavigate();
   const API_URL = import.meta.env.VITE_API_URL;
-  const { setUser } = useContext(UserContext);
+  const ctx = useContext(UserContext);
+  const setUser = ctx?.setUser;
 
   const handleSubmit = async (e) => {
     console.log("🔥 handleSubmit BẮT ĐẦU");
@@ -55,6 +56,14 @@ export default function Login() {
         zodiac: user.zodiac || "Unknown",
         preferences: user.preferences || null,
         lookingFor: user.preferences?.lookingFor || user.lookingFor || "All",
+        height: (() => {
+          const numeric = Number(user.height);
+          if (!Number.isFinite(numeric)) {
+            return null;
+          }
+          const truncated = Math.trunc(numeric);
+          return truncated >= 120 && truncated <= 220 ? truncated : null;
+        })(),
         isProfileComplete: user.isProfileComplete ?? user.profileCompleted ?? false,
       };
 
@@ -151,13 +160,7 @@ export default function Login() {
               Đăng nhập
             </button>
 
-            <button
-              type="button"
-              className="flex w-full items-center justify-center gap-3 rounded-full border border-rose-100 bg-white/90 px-6 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:border-rose-200 hover:bg-rose-50"
-            >
-              <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="h-5 w-5" />
-              Đăng nhập bằng Google
-            </button>
+            {/* Google sign-in removed — only HUST email allowed */}
 
             <div className="flex items-center justify-between text-sm">
               <Link to="/forgot-password" className="font-semibold text-teal-500 hover:text-teal-400">

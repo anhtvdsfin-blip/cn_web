@@ -23,6 +23,27 @@ const matchSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'ChatRoom'
   },
+
+  // Last message (preview only)
+  lastMessage: {
+    text: String,
+    senderId: mongoose.Schema.Types.ObjectId,
+    timestamp: Date
+  },
+
+  // Unread count per user
+  unreadCount: {
+    type: Map,
+    of: Number,
+    default: new Map()
+  },
+
+  // Typing indicator
+  typing: {
+    type: Map,
+    of: Boolean,
+    default: new Map()
+  },
   
   // Status
   status: {
@@ -52,6 +73,17 @@ const matchSchema = new mongoose.Schema({
   // Compatibility score
   compatibilityScore: Number,
   compatibilityBreakdown: Object,
+  // Selected opening moves at time of match (optional)
+  openingMoveUser1: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'OpeningMove',
+    default: null,
+  },
+  openingMoveUser2: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'OpeningMove',
+    default: null,
+  },
     
   // Metadata
   matchedAt: Date, // Khi cả 2 like

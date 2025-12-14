@@ -17,6 +17,7 @@ import {
   Sparkles,
   Target,
   Users,
+  Ruler,
 } from 'lucide-react';
 
 const pastelGradient = 'bg-[#fff5f8]';
@@ -24,6 +25,7 @@ const pastelGradient = 'bg-[#fff5f8]';
 const defaultForm = {
   name: '',
   age: '',
+  height: '',
   gender: '',
   career: '',
   classYear: '',
@@ -58,10 +60,24 @@ const facultyOptions = [
 
 const classYearOptions = ['K65', 'K66', 'K67', 'K68', 'K69', 'K70', 'Khác'];
 
+const MIN_HEIGHT_CM = 120;
+const MAX_HEIGHT_CM = 220;
+
+const normalizeHeightValue = (value, { asString = false } = {}) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return asString ? '' : null;
+  }
+  const truncated = Math.trunc(numeric);
+  if (truncated < MIN_HEIGHT_CM || truncated > MAX_HEIGHT_CM) {
+    return asString ? '' : null;
+  }
+  return asString ? String(truncated) : truncated;
+};
+
 export default function Profile() {
   const navigate = useNavigate();
   const API_URL = import.meta.env.VITE_API_URL;
-  const photoInputRef = useRef(null);
   const currentUser = useMemo(
     () => JSON.parse(sessionStorage.getItem('user') || '{}'),
     [],
@@ -73,6 +89,28 @@ export default function Profile() {
   const [message, setMessage] = useState('');
   const [formData, setFormData] = useState(defaultForm);
   const [photoIndex, setPhotoIndex] = useState(0);
+  const normalizedHeight = useMemo(
+    () => normalizeHeightValue(formData.height),
+    [formData.height],
+  );
+  const heightStatus = useMemo(() => {
+    if (!formData.height) {
+      return {
+        helper: `Nhập chiều cao thực tế (${MIN_HEIGHT_CM}-${MAX_HEIGHT_CM} cm).`,
+        isError: false,
+      };
+    }
+    if (normalizedHeight === null) {
+      return {
+        helper: `Chiều cao hợp lệ từ ${MIN_HEIGHT_CM}-${MAX_HEIGHT_CM} cm.`,
+        isError: true,
+      };
+    }
+    return {
+      helper: 'Chiều cao sẽ hiển thị công khai trong hồ sơ.',
+      isError: false,
+    };
+  }, [formData.height, normalizedHeight]);
   const steps = useMemo(
     () => [
       {
@@ -111,7 +149,8 @@ export default function Profile() {
           formData.name &&
           formData.gender &&
           formData.hometown.trim() &&
-          formData.bio.trim(),
+          formData.bio.trim() &&
+          normalizedHeight,
         ),
       },
       {
@@ -154,7 +193,8 @@ export default function Profile() {
         formData.name &&
         formData.gender &&
         formData.hometown.trim() &&
-        formData.bio.trim(),
+        formData.bio.trim() &&
+        normalizedHeight,
       ),
       
       connections:
@@ -192,6 +232,7 @@ export default function Profile() {
         setFormData({
           name: user?.name || '',
           age: user?.age || '',
+          height: normalizeHeightValue(user?.height, { asString: true }),
           gender: user?.gender || '',
           career: user?.career && user.career !== 'Not updated' ? user.career : '',
           classYear: user?.classYear && user.classYear !== 'Not updated' ? user.classYear : '',
@@ -235,6 +276,14 @@ export default function Profile() {
     }));
   };
 
+  const handleHeightInputChange = (value) => {
+    const sanitized = value.replace(/[^0-9]/g, '').slice(0, 3);
+    setFormData((prev) => ({
+      ...prev,
+      height: sanitized,
+    }));
+  };
+
   const handleAgeRangeChange = (field, value) => {
     setFormData((prev) => ({
       ...prev,
@@ -268,72 +317,6 @@ export default function Profile() {
     }));
   };
 
-  const handlePhotoUpload = (event) => {
-    const files = Array.from(event.target.files || []);
-    if (!files.length) {
-      return;
-    }
-
-    const readers = files
-      .filter((file) => file.type.startsWith('image/'))
-      .map(
-        (file) =>
-          new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = () => reject(new Error('Không thể đọc file ảnh.'));
-            reader.readAsDataURL(file);
-          }),
-      );
-
-    Promise.all(readers)
-      .then((images) => {
-        setFormData((prev) => {
-          const nextGallery = [...prev.photoGallery, ...images].slice(0, 10);
-          return {
-            ...prev,
-            photoGallery: nextGallery,
-          };
-        });
-        setMessage('');
-      })
-      .catch(() => setMessage('Không thể tải ảnh. Vui lòng thử lại.'))
-      .finally(() => {
-        if (event.target) {
-          event.target.value = '';
-        }
-      });
-  };
-
-  const handleRemovePhoto = (index) => {
-    setFormData((prev) => {
-      const nextGallery = prev.photoGallery.filter((_, idx) => idx !== index);
-      const nextIndex = Math.max(0, index === photoIndex ? index - 1 : photoIndex);
-      setPhotoIndex(nextIndex);
-      return {
-        ...prev,
-        photoGallery: nextGallery,
-      };
-    });
-  };
-
-  const handleSetPrimaryPhoto = (index) => {
-    setFormData((prev) => {
-      if (index === 0) {
-        setPhotoIndex(0);
-        return prev;
-      }
-      const nextGallery = [...prev.photoGallery];
-      const [selected] = nextGallery.splice(index, 1);
-      nextGallery.unshift(selected);
-      setPhotoIndex(0);
-      return {
-        ...prev,
-        photoGallery: nextGallery,
-      };
-    });
-  };
-
   const handlePhotoNavigate = (direction) => {
     if (formData.photoGallery.length <= 1) {
       return;
@@ -356,11 +339,18 @@ export default function Profile() {
       return;
     }
 
+    const normalizedHeightForSubmit = normalizeHeightValue(formData.height);
+    if (normalizedHeightForSubmit === null) {
+      setMessage(`Chiều cao phải nằm trong khoảng ${MIN_HEIGHT_CM}-${MAX_HEIGHT_CM} cm.`);
+      return;
+    }
+
     try {
       const payload = {
         name: formData.name.trim(),
         age: formData.age,
         gender: formData.gender,
+        height: normalizedHeightForSubmit,
         career: formData.career.trim(),
         classYear: formData.classYear.trim(),
         location: formData.location.trim(),
@@ -387,8 +377,11 @@ export default function Profile() {
       setProfile(nextUser);
       setFormData((prev) => ({
         ...prev,
+        height:
+          normalizeHeightValue(nextUser.height, { asString: true }) || prev.height,
         photoGallery: Array.isArray(nextUser.photoGallery) ? nextUser.photoGallery : prev.photoGallery,
       }));
+      const storedHeight = normalizeHeightValue(nextUser.height) ?? normalizedHeightForSubmit;
       sessionStorage.setItem(
         'user',
         JSON.stringify({
@@ -399,6 +392,7 @@ export default function Profile() {
           avatar: nextUser.avatar || payload.avatar,
           hometown: nextUser.hometown || payload.hometown || currentUser.hometown || '',
           location: nextUser.location || payload.location || currentUser.location || '',
+          height: storedHeight,
         }),
       );
       window.dispatchEvent(new Event('userChanged'));
@@ -499,6 +493,27 @@ export default function Profile() {
                   className="w-full rounded-3xl border border-rose-100 bg-white px-5 py-3 text-sm text-slate-700 shadow-sm transition focus:border-rose-300 focus:outline-none focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed"
                   placeholder="Ví dụ: 21"
                 />
+              </label>
+              <label className="space-y-2 text-sm font-semibold text-slate-600">
+                <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-rose-400">
+                  <Ruler className="h-3.5 w-3.5" /> Chiều cao (cm)
+                </span>
+                <div className="relative">
+                  <Ruler className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-rose-300" />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    disabled={!isEditing}
+                    value={formData.height}
+                    onChange={(event) => handleHeightInputChange(event.target.value)}
+                    className={`w-full rounded-3xl border ${heightStatus.isError ? 'border-rose-300 focus:border-rose-400 focus:ring-rose-100' : 'border-rose-100 focus:border-rose-300 focus:ring-rose-100'} bg-white px-11 py-3 text-sm text-slate-700 shadow-sm transition focus:outline-none disabled:cursor-not-allowed`}
+                    placeholder={`${MIN_HEIGHT_CM}-${MAX_HEIGHT_CM}`}
+                  />
+                </div>
+                <p className={`text-xs ${heightStatus.isError ? 'text-rose-500' : 'text-slate-400'}`}>
+                  {heightStatus.helper}
+                </p>
               </label>
               <label className="space-y-2 text-sm font-semibold text-slate-600">
                 <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-rose-400">
@@ -831,6 +846,10 @@ export default function Profile() {
                   <span className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-4 py-2">
                     <Home className="h-4 w-4" /> Đến từ {displayHometown}
                   </span>
+                  <span className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-4 py-2">
+                    <Ruler className="h-4 w-4" />
+                    {normalizedHeight ? `${normalizedHeight} cm` : 'Chiều cao chưa cập nhật'}
+                  </span>
                 </div>
               </div>
               <div className="flex flex-col gap-4 rounded-[24px] border border-rose-100 bg-white p-6 text-sm text-rose-700 shadow-[0_12px_32px_-26px_rgba(233,114,181,0.45)]">
@@ -953,24 +972,6 @@ export default function Profile() {
                       </button>
                     </>
                   )}
-                  {isEditing && (
-                    <button
-                      type="button"
-                      onClick={() => photoInputRef.current?.click()}
-                      className="absolute bottom-3 right-3 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-rose-400 via-rose-500 to-pink-500 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-rose-200/60 transition hover:scale-[1.02]"
-                    >
-                      <Camera className="h-4 w-4" />
-                      Thêm ảnh
-                    </button>
-                  )}
-                  <input
-                    ref={photoInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handlePhotoUpload}
-                    className="hidden"
-                  />
                 </div>
 
                 {formData.photoGallery.length > 0 && (
@@ -985,28 +986,19 @@ export default function Profile() {
                         }`}
                       >
                         <img src={photo} alt={`Thumb ${index + 1}`} className="h-full w-full object-cover" />
-                        {isEditing && (
-                          <div className="absolute inset-x-1 bottom-1 flex items-center justify-between text-[9px] font-semibold text-white">
-                            <button
-                              type="button"
-                              onClick={() => handleSetPrimaryPhoto(index)}
-                              className="rounded-full bg-rose-500/80 px-2 py-0.5"
-                            >
-                              {index === 0 ? 'Chính' : 'Đặt chính'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleRemovePhoto(index)}
-                              className="rounded-full bg-black/50 px-2 py-0.5"
-                            >
-                              Xóa
-                            </button>
-                          </div>
-                        )}
                       </button>
                     ))}
                   </div>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => navigate('/profile/manage-photos')}
+                  className="mt-6 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-rose-400 via-rose-500 to-pink-500 px-5 py-2 text-xs font-semibold text-white shadow-md shadow-rose-200/60 transition hover:scale-[1.02]"
+                >
+                  <Camera className="h-4 w-4" />
+                  Quản lý album ảnh
+                </button>
               </div>
 
               <div className="space-y-6 rounded-[28px] border border-rose-100 bg-white/95 p-5 text-left shadow-inner shadow-rose-200/50">

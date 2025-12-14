@@ -13,14 +13,13 @@ import {
 } from 'lucide-react';
 
 const featureGroups = [
-  {
+    {
     title: 'Authentication & Security',
     subtitle: 'Giữ an toàn cho từng kết nối',
     accent: 'from-rose-200 via-pink-200 to-purple-200',
     Icon: ShieldCheck,
     bullets: [
       'Đăng ký nhanh với email @hust.edu.vn',
-      'Đăng nhập một chạm bằng Google',
       'Xác minh avatar, họ tên, khoa và khóa học',
     ],
   },

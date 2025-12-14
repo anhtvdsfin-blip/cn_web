@@ -16,9 +16,26 @@ export const initChatSocket = (io) => {
   io.on("connection", (socket) => {
     console.log(`✅ User connected: ${socket.id}`);
 
+
+// ==========================================
+// AUTH USER (fix userId undefined)
+// ==========================================
+socket.on("auth_user", ({ userId }) => {
+  if (!userId) {
+    console.log("❌ auth_user received empty userId");
+    return;
+  }
+
+  socket.data.userId = userId.toString();
+  socket.join(`user_${userId}`);
+  console.log(`🔐 Authenticated user: ${socket.data.userId}`);
+});
+
     // ==========================================
     // 1. TÌM PARTNER
     // ==========================================
+
+
     socket.on("find_partner", async (userData) => {
       try {
         console.log(`🔍 ${userData.name} đang tìm partner...`);
@@ -339,61 +356,93 @@ export const initChatSocket = (io) => {
     // ==========================================
     // 4. GỬI TIN NHẮN VĨNH VIỄN (SAU KHI MATCH)
     // ==========================================
-    socket.on("send_message", async ({ conversationId, message, tempId }) => {
+    socket.on("send_message", async ({ conversationId, message, tempId, senderId }) => {
       try {
-        const conversation = await Conversation.findById(conversationId);
-        if (!conversation) {
-          socket.emit("error", { message: "Conversation not found" });
+        console.log(`📨 Received send_message: conversationId=${conversationId}, senderId=${senderId}, message=${message}`);
+
+        // Use senderId from payload or socket data
+        const userId = senderId || socket.data.userId;
+        if (!userId) {
+          console.error("❌ No userId found in socket.data or payload");
+          socket.emit("error", { message: "Unauthorized - No user ID" });
           return;
         }
 
-        const userId = socket.data.userId;
-        if (!conversation.participants.includes(userId)) {
+        // conversationId is actually matchId
+        const match = await Match.findById(conversationId);
+        if (!match) {
+          console.error(`❌ Match not found: ${conversationId}`);
+          socket.emit("error", { message: "Match not found" });
+          return;
+        }
+
+        const isUser1 = match.user1Id.toString() === userId;
+        const isUser2 = match.user2Id.toString() === userId;
+
+        if (!isUser1 && !isUser2) {
+          console.error(`❌ Unauthorized: userId=${userId}, user1Id=${match.user1Id}, user2Id=${match.user2Id}`);
           socket.emit("error", { message: "Unauthorized" });
           return;
         }
 
-        // Tạo object message mới
-        const newMessage = {
+        // Create new message in Message collection
+        const newMessage = await Message.create({
+          chatRoomId: conversationId,
           senderId: userId,
           content: message,
-          timestamp: new Date(),
-          isRead: false
-        };
+          type: 'text',
+          status: 'sent',
+          timestamp: new Date()
+        });
 
-        // Thêm vào mảng messages
-        conversation.messages.push(newMessage);
+        console.log(`✅ Message saved: ${newMessage._id}`);
 
-        // Update lastMessage
-        conversation.lastMessage = {
+        // Update lastMessage in Match
+        match.lastMessage = {
           text: message,
           senderId: userId,
           timestamp: new Date()
         };
-        conversation.updatedAt = new Date();
+        match.updatedAt = new Date();
 
-        // Update unread count cho partner
-        const partnerId = conversation.participants.find(p => p.toString() !== userId);
-        const currentUnread = conversation.unreadCount.get(partnerId.toString()) || 0;
-        conversation.unreadCount.set(partnerId.toString(), currentUnread + 1);
+        // Update unread count for partner
+        const partnerId = isUser1 ? match.user2Id.toString() : match.user1Id.toString();
+        const currentUnread = match.unreadCount.get(partnerId) || 0;
+        match.unreadCount.set(partnerId, currentUnread + 1);
 
-        await conversation.save();
+        await match.save();
 
-        // Emit tin nhắn cho tất cả participants kèm tempId để client thay thế tin tạm
-        conversation.participants.forEach(participantId => {
-          io.to(`user_${participantId}`).emit("new_message", {
-            conversationId,
-            message: {
-              ...newMessage,
-              tempId // giữ tempId nếu muốn sync client
-            }
-          });
+        // Emit message to both users
+        const user1Room = `user_${match.user1Id}`;
+        const user2Room = `user_${match.user2Id}`;
+
+        io.to(user1Room).emit("new_message", {
+          conversationId,
+          message: {
+            _id: newMessage._id,
+            senderId: newMessage.senderId,
+            content: newMessage.content,
+            timestamp: newMessage.timestamp,
+            tempId
+          }
         });
 
-        console.log(`💬 New message in conversation ${conversationId}`);
+        io.to(user2Room).emit("new_message", {
+          conversationId,
+          message: {
+            _id: newMessage._id,
+            senderId: newMessage.senderId,
+            content: newMessage.content,
+            timestamp: newMessage.timestamp,
+            tempId
+          }
+        });
+
+        console.log(`💬 Message emitted to both users in match ${conversationId}`);
 
       } catch (error) {
-        console.error("❌ Error sending message:", error);
+        console.error("❌ Error sending message:", error.message);
+        socket.emit("error", { message: "Failed to send message: " + error.message });
       }
     });
 
@@ -402,10 +451,15 @@ export const initChatSocket = (io) => {
     // ==========================================
     socket.on("typing", ({ conversationId, isTyping }) => {
       const userId = socket.data.userId;
-      Conversation.findById(conversationId).then(conv => {
-        if (conv) {
-          const partnerId = conv.participants.find(p => p.toString() !== userId);
-          io.to(`user_${partnerId}`).emit("partner_typing", { conversationId, isTyping });
+      Match.findById(conversationId).then(match => {
+        if (match) {
+          const partnerId = match.user1Id.toString() === userId 
+            ? match.user2Id.toString() 
+            : match.user1Id.toString();
+
+          if (partnerId) {
+            io.to(`user_${partnerId}`).emit("partner_typing", { conversationId, isTyping });
+          }
         }
       });
     });
@@ -416,26 +470,20 @@ export const initChatSocket = (io) => {
     socket.on("mark_as_read", async ({ conversationId }) => {
       try {
         const userId = socket.data.userId;
-        const conversation = await Conversation.findById(conversationId);
+        const match = await Match.findById(conversationId);
         
-        if (conversation) {
-          conversation.unreadCount.set(userId, 0);
-          await conversation.save();
+        if (match) {
+          match.unreadCount.set(userId.toString(), 0);
+          await match.save();
 
-          // Mark messages as read
+          // Mark messages as read in Message collection
           await Message.updateMany(
             {
-              conversationId,
-              senderId: { $ne: userId },
-              'readBy.userId': { $ne: userId }
+              chatRoomId: conversationId,
+              senderId: { $ne: userId }
             },
             {
-              $push: {
-                readBy: {
-                  userId,
-                  readAt: new Date()
-                }
-              }
+              $set: { isRead: true }
             }
           );
         }

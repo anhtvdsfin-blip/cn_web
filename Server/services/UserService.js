@@ -3,6 +3,49 @@ import User from '../models/User.js';
 import { geocodeLocation } from '../helper/geocodeLocation.js';
 import { uploadProfilePhoto } from './photo.service.js';
 
+const MIN_MATCH_AGE = 18;
+const MAX_MATCH_AGE = 26;
+const MIN_HEIGHT_CM = 120;
+const MAX_HEIGHT_CM = 220;
+
+const clampAgeRange = (value) => {
+    if (!value || typeof value !== 'object') {
+        return {
+            min: MIN_MATCH_AGE,
+            max: MAX_MATCH_AGE,
+        };
+    }
+
+    let min = Number(value.min);
+    let max = Number(value.max);
+
+    if (!Number.isFinite(min)) {
+        min = MIN_MATCH_AGE;
+    }
+    if (!Number.isFinite(max)) {
+        max = MAX_MATCH_AGE;
+    }
+
+    min = Math.trunc(min);
+    max = Math.trunc(max);
+
+    if (min < MIN_MATCH_AGE) {
+        min = MIN_MATCH_AGE;
+    }
+    if (min > MAX_MATCH_AGE - 1) {
+        min = MAX_MATCH_AGE - 1;
+    }
+
+    if (max > MAX_MATCH_AGE) {
+        max = MAX_MATCH_AGE;
+    }
+    if (max <= min) {
+        max = Math.min(MAX_MATCH_AGE, min + 1);
+    }
+
+    return { min, max };
+};
+
 export const normalizeGender = (value) => {
     if (typeof value !== 'string') {
         return null;
@@ -55,6 +98,54 @@ const sanitizeImageValue = (value) => {
     return '';
 };
 
+const deriveZodiacFromDate = (dateValue) => {
+    if (!(dateValue instanceof Date) || Number.isNaN(dateValue.valueOf())) {
+        return '';
+    }
+
+    const month = dateValue.getUTCMonth() + 1;
+    const day = dateValue.getUTCDate();
+
+    const zodiacTable = [
+        { name: 'Ma Kết', start: { month: 12, day: 22 }, end: { month: 1, day: 19 } },
+        { name: 'Bảo Bình', start: { month: 1, day: 20 }, end: { month: 2, day: 18 } },
+        { name: 'Song Ngư', start: { month: 2, day: 19 }, end: { month: 3, day: 20 } },
+        { name: 'Bạch Dương', start: { month: 3, day: 21 }, end: { month: 4, day: 19 } },
+        { name: 'Kim Ngưu', start: { month: 4, day: 20 }, end: { month: 5, day: 20 } },
+        { name: 'Song Tử', start: { month: 5, day: 21 }, end: { month: 6, day: 20 } },
+        { name: 'Cự Giải', start: { month: 6, day: 21 }, end: { month: 7, day: 22 } },
+        { name: 'Sư Tử', start: { month: 7, day: 23 }, end: { month: 8, day: 22 } },
+        { name: 'Xử Nữ', start: { month: 8, day: 23 }, end: { month: 9, day: 22 } },
+        { name: 'Thiên Bình', start: { month: 9, day: 23 }, end: { month: 10, day: 22 } },
+        { name: 'Bọ Cạp', start: { month: 10, day: 23 }, end: { month: 11, day: 21 } },
+        { name: 'Nhân Mã', start: { month: 11, day: 22 }, end: { month: 12, day: 21 } },
+    ];
+
+    const matchesRange = (entry) => {
+        const { start, end } = entry;
+        if (start.month === end.month) {
+            return month === start.month && day >= start.day && day <= end.day;
+        }
+        if (start.month < end.month) {
+            return (
+                (month === start.month && day >= start.day)
+                || (month === end.month && day <= end.day)
+                || (month > start.month && month < end.month)
+            );
+        }
+        // Range wraps around the year (e.g., Capricorn)
+        return (
+            month > start.month
+            || month < end.month
+            || (month === start.month && day >= start.day)
+            || (month === end.month && day <= end.day)
+        );
+    };
+
+    const found = zodiacTable.find(matchesRange);
+    return found ? found.name : '';
+};
+
 export const buildUserResponse = (userDoc) => {
     if (!userDoc) {
         return null;
@@ -79,6 +170,13 @@ export const buildUserResponse = (userDoc) => {
         }
         : undefined;
     const normalizedGender = normalizeGender(gender) || 'Other';
+    const basePreferences = (rest.preferences && typeof rest.preferences === 'object')
+        ? rest.preferences
+        : {};
+    const normalizedPreferences = {
+        ...basePreferences,
+        ageRange: clampAgeRange(basePreferences?.ageRange),
+    };
     const normalizedHobbies = Array.isArray(rest.hobbies) ? rest.hobbies : [];
     const normalizedStudySubjects = Array.isArray(rest.studySubjects) ? rest.studySubjects : [];
     const sanitizedAvatar = sanitizeImageValue(plainUser.avatar);
@@ -95,21 +193,43 @@ export const buildUserResponse = (userDoc) => {
         : (typeof plainUser.name === 'string' && plainUser.name.trim().length > 0
             ? plainUser.name.trim().charAt(0).toUpperCase()
             : '');
+    const normalizedHeight = (() => {
+        const numeric = Number(plainUser.height);
+        if (!Number.isFinite(numeric)) {
+            return null;
+        }
+        const truncated = Math.trunc(numeric);
+        if (truncated < MIN_HEIGHT_CM || truncated > MAX_HEIGHT_CM) {
+            return null;
+        }
+        return truncated;
+    })();
+
+    const normalizedZodiac = (() => {
+        const raw = typeof rest.zodiac === 'string' ? rest.zodiac.trim() : '';
+        if (raw && raw.toLowerCase() !== 'unknown') {
+            return raw;
+        }
+        return deriveZodiacFromDate(userDoc.dob);
+    })();
 
     return {
         ...rest,
+        preferences: normalizedPreferences,
         hobbies: normalizedHobbies,
         studySubjects: normalizedStudySubjects,
         photoGallery: normalizedPhotoGallery,
         avatar: sanitizedAvatar,
         avatarFallback: avatarInitial,
         avatarInitial,
+        height: normalizedHeight,
         _id: id,
         id,
         gender: normalizedGender,
         hometown: normalizedHometown,
         location: normalizedHometown,
         geoLocation: normalizedGeoLocation,
+        zodiac: normalizedZodiac,
         isProfileComplete: typeof userDoc.isProfileComplete === 'function'
             ? userDoc.isProfileComplete()
             : rest.profileCompleted ?? false,
@@ -203,6 +323,7 @@ export const updateUserProfile = async (userId, payload) => {
         connectionGoal,
         photoGallery,
         avatar,
+        height,
     } = payload;
 
     if (gender) {
@@ -293,6 +414,20 @@ export const updateUserProfile = async (userId, payload) => {
 
     if (typeof academicHighlights === 'string') {
         user.academicHighlights = academicHighlights.trim().slice(0, 400);
+    }
+
+    if (height !== undefined) {
+        const numericHeight = Number(height);
+        if (Number.isFinite(numericHeight)) {
+            const truncated = Math.trunc(numericHeight);
+            if (truncated >= MIN_HEIGHT_CM && truncated <= MAX_HEIGHT_CM) {
+                user.height = truncated;
+            } else {
+                user.height = 0;
+            }
+        } else {
+            user.height = 0;
+        }
     }
 
     if (typeof connectionGoal === 'string') {
@@ -398,20 +533,37 @@ export const updateUserProfile = async (userId, payload) => {
         normalizedPrefSubjects = user.studySubjects;
     }
 
-    const minAgeCandidate = Number(
-        incomingPrefs.ageRange?.min ?? currentPrefs.ageRange?.min ?? 18
+    let minAgeCandidate = Number(
+        incomingPrefs.ageRange?.min ?? currentPrefs.ageRange?.min ?? MIN_MATCH_AGE
     );
-    const maxAgeCandidate = Number(
-        incomingPrefs.ageRange?.max ?? currentPrefs.ageRange?.max ?? 99
+    let maxAgeCandidate = Number(
+        incomingPrefs.ageRange?.max ?? currentPrefs.ageRange?.max ?? MAX_MATCH_AGE
     );
 
-    if (
-        Number.isNaN(minAgeCandidate)
-        || Number.isNaN(maxAgeCandidate)
-        || minAgeCandidate < 18
-        || maxAgeCandidate > 99
-        || minAgeCandidate >= maxAgeCandidate
-    ) {
+    if (Number.isNaN(minAgeCandidate) || Number.isNaN(maxAgeCandidate)) {
+        const error = new Error('Khoảng tuổi không hợp lệ.');
+        error.statusCode = httpStatus.BAD_REQUEST;
+        throw error;
+    }
+
+    minAgeCandidate = Math.trunc(minAgeCandidate);
+    maxAgeCandidate = Math.trunc(maxAgeCandidate);
+
+    if (minAgeCandidate < MIN_MATCH_AGE) {
+        minAgeCandidate = MIN_MATCH_AGE;
+    }
+    if (minAgeCandidate > MAX_MATCH_AGE - 1) {
+        minAgeCandidate = MAX_MATCH_AGE - 1;
+    }
+
+    if (maxAgeCandidate > MAX_MATCH_AGE) {
+        maxAgeCandidate = MAX_MATCH_AGE;
+    }
+    if (maxAgeCandidate <= minAgeCandidate) {
+        maxAgeCandidate = Math.min(MAX_MATCH_AGE, minAgeCandidate + 1);
+    }
+
+    if (maxAgeCandidate <= minAgeCandidate) {
         const error = new Error('Khoảng tuổi không hợp lệ.');
         error.statusCode = httpStatus.BAD_REQUEST;
         throw error;

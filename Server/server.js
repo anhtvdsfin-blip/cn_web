@@ -11,10 +11,16 @@ import matchRoutes from "./routes/matchRoutes.js";  // NEW
 import connectDB from "./config/db.js";
 import matchingService from "./services/MatchingService.js";  // NEW
 import conversationRoutes from './routes/conversationRoutes.js';
+import libraryRoutes from './routes/libraryRoutes.js';
 import { initChatSocket } from './socket/chatSocket.js';
+import { initNotificationSocket } from './socket/notificationSocket.js';
 import postRoutes from './routes/postRoutes.js';
 import { notifRouter } from './routes/notificationRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+import findLoveRoutes from './routes/findLoveRoutes.js';
+import openingMoveRoutes from './routes/openingMoveRoutes.js';
+
+import { initPostSocket } from './socket/postSocket.js';
 
 dotenv.config();
 
@@ -35,6 +41,9 @@ const io = new Server(httpServer, {
     credentials: true
   }
 });
+
+// Store io instance in app for controllers
+app.set('io', io);
 
 
 // Middleware
@@ -74,10 +83,22 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Attach io to app for routes to access
+app.use((req, res, next) => {
+  req.io = io;
+  // Add helper to emit notifications to specific user
+  req.emitNotification = (recipientId, data) => {
+    io.to(recipientId.toString()).emit('notification:new', data);
+  };
+  next();
+});
+
 // API Routes
 app.use("/api/auth", authRoutes);
 app.use('/api/users', userRoutes);
 app.use("/api/match", matchRoutes);  // NEW
+app.use('/api/findlove', findLoveRoutes);
+app.use('/api', openingMoveRoutes);
 app.use('/api', conversationRoutes);
 app.use("/api", postRoutes);
 app.use("/api", notifRouter);  
@@ -105,9 +126,10 @@ connectDB();
 })();
 
 
-
 // Socket.IO logic
 initChatSocket(io);
+initPostSocket(io);
+initNotificationSocket(io);
 
 // Health check
 app.get("/", (req, res) => {

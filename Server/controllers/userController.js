@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import { getUserProfile, updateUserProfile } from '../services/UserService.js';
 import User from '../models/User.js';
 import Report from '../models/Report.js';
+import OpeningMove from '../models/OpeningMove.js';
 
 // POST /api/users/report/:targetId
 export const reportUser = async (req, res) => {
@@ -33,32 +34,44 @@ export const reportUser = async (req, res) => {
 };
 
 // POST /api/users/block/:targetId
+
 export const blockUser = async (req, res) => {
-    try {
-        const blockerId = req.body.blockerId || req.body.reporterId || req.user?.id;
-        const targetId = req.params.targetId;
+    try {
+        const blockerId = req.body.blockerId || req.body.reporterId || req.user?.id;
+        const targetId = req.params.targetId;
 
-        if (!blockerId || !targetId) {
-            return res.status(httpStatus.BAD_REQUEST).send({ success: false, message: 'Thiếu blockerId hoặc targetId.' });
-        }
+        if (!blockerId || !targetId) {
+            return res.status(httpStatus.BAD_REQUEST).send({ success: false, message: 'Thiếu blockerId hoặc targetId.' });
+        }
 
-        const blocker = await User.findById(blockerId);
-        if (!blocker) {
-          return res.status(httpStatus.NOT_FOUND).send({ success: false, message: 'Người chặn không tồn tại.' });
-        }
 
-        const alreadyBlocked = (blocker.blockedUsers || []).some(id => id.toString() === targetId.toString());
-        if (!alreadyBlocked) {
-          blocker.blockedUsers = blocker.blockedUsers || [];
-          blocker.blockedUsers.push(targetId);
-          await blocker.save();
-        }
+        const target = await User.findById(targetId);
+        if (!target) {
+            return res.status(httpStatus.NOT_FOUND).send({ success: false, message: 'Người dùng bị chặn không tồn tại.' });
+        }
 
-        return res.status(httpStatus.OK).send({ success: true, message: 'Người dùng đã bị chặn.' });
-    } catch (error) {
-        console.error('blockUser error', error);
-        return res.status(httpStatus.INTERNAL_SERVER_ERROR).send({ success: false, message: 'Không thể chặn người dùng.' });
-    }
+
+        const updatedBlocker = await User.findByIdAndUpdate(
+            blockerId, 
+            { 
+                $addToSet: { blockedUsers: targetId } 
+            },
+            { new: true } 
+        );
+
+        if (!updatedBlocker) {
+          return res.status(httpStatus.NOT_FOUND).send({ success: false, message: 'Người chặn không tồn tại.' });
+        }
+
+        console.log(`User ${blockerId} blocked ${targetId}. Current blocked count: ${updatedBlocker.blockedUsers.length}`);
+
+        return res.status(httpStatus.OK).send({ success: true, message: 'Người dùng đã bị chặn.' });
+        
+        
+    } catch (error) {
+        console.error('blockUser error', error);
+        return res.status(httpStatus.INTERNAL_SERVER_ERROR).send({ success: false, message: 'Không thể chặn người dùng.' });
+    }
 };
 
 export const getProfile = async (req, res) => {
@@ -96,5 +109,32 @@ export const updateProfile = async (req, res) => {
         const status = error.statusCode || httpStatus.BAD_REQUEST;
         const message = error.message || 'Cập nhật profile thất bại.';
         res.status(status).send({ message });
+    }
+};
+
+export const setSelectedOpeningMove = async (req, res) => {
+    try {
+        const targetUserId = req.params.userId;
+        if (!targetUserId) return res.status(httpStatus.BAD_REQUEST).send({ success: false, message: 'Thiếu userId.' });
+
+        const { selectedOpeningMove } = req.body || {};
+
+        // If provided and not null, validate exists and active
+        if (selectedOpeningMove) {
+            const move = await OpeningMove.findById(selectedOpeningMove);
+            if (!move) return res.status(httpStatus.NOT_FOUND).send({ success: false, message: 'OpeningMove không tồn tại.' });
+            if (!move.isActive) return res.status(httpStatus.BAD_REQUEST).send({ success: false, message: 'OpeningMove hiện không khả dụng.' });
+        }
+
+        const user = await User.findById(targetUserId);
+        if (!user) return res.status(httpStatus.NOT_FOUND).send({ success: false, message: 'Người dùng không tồn tại.' });
+
+        user.selectedOpeningMove = selectedOpeningMove || null;
+        await user.save();
+
+        return res.status(httpStatus.OK).send({ success: true, message: 'Cập nhật Opening Move thành công.', user });
+    } catch (error) {
+        console.error('setSelectedOpeningMove error', error);
+        return res.status(httpStatus.INTERNAL_SERVER_ERROR).send({ success: false, message: 'Không thể cập nhật Opening Move.' });
     }
 };

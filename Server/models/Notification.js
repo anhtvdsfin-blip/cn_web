@@ -45,6 +45,12 @@ const notificationSchema = new mongoose.Schema({
     ref: 'Conversation'
   },
   
+  // Match ID reference
+  matchId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Match'
+  },
+  
   // Content preview
   content: String,
   
@@ -56,10 +62,6 @@ const notificationSchema = new mongoose.Schema({
   
   readAt: Date,
   
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
 }, {
   timestamps: true
 });
@@ -76,6 +78,9 @@ export const Notification = mongoose.model('Notification', notificationSchema);
 
 
 export const createNotification = async (data) => {
+  if (data.recipientId.toString() === data.senderId.toString()) {
+    return null;
+  }
   try {
     const notification = new Notification(data);
     await notification.save();

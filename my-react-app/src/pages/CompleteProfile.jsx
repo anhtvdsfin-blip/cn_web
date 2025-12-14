@@ -22,6 +22,7 @@ import {
   Target,
   BookOpen,
   GraduationCap,
+  Ruler,
 } from 'lucide-react';
 
 const steps = [
@@ -88,6 +89,11 @@ const connectionGoalOptions = [
   },
 ];
 
+const MIN_MATCHING_AGE = 18;
+const MAX_MATCHING_AGE = 26;
+const MIN_HEIGHT_CM = 120;
+const MAX_HEIGHT_CM = 220;
+
 const defaultForm = {
   gender: '',
   dob: '',
@@ -97,12 +103,13 @@ const defaultForm = {
   geoLocation: null,
   bio: '',
   hobbies: [],
+  height: '',
   zodiac: '',
   connectionGoal: '',
   academicHighlights: '',
   preferences: {
     lookingFor: 'All',
-    ageRange: { min: 20, max: 35 },
+    ageRange: { min: 20, max: MAX_MATCHING_AGE },
     distance: 30,
   },
 };
@@ -155,7 +162,8 @@ const sanitizeText = (value) => {
   if (!trimmed) {
     return '';
   }
-  if (trimmed.toLowerCase() === 'not updated') {
+  const lowered = trimmed.toLowerCase();
+  if (lowered === 'not updated' || lowered === 'unknown') {
     return '';
   }
   return trimmed;
@@ -193,6 +201,43 @@ const parseNumericValue = (value, fallback) => {
   return fallback;
 };
 
+const normalizeAgeRange = (range = {}) => {
+  const { min, max } = range || {};
+  let normalizedMin = Number.isFinite(min) ? Math.trunc(min) : MIN_MATCHING_AGE;
+  let normalizedMax = Number.isFinite(max) ? Math.trunc(max) : MAX_MATCHING_AGE;
+
+  if (normalizedMin < MIN_MATCHING_AGE) {
+    normalizedMin = MIN_MATCHING_AGE;
+  }
+  if (normalizedMin > MAX_MATCHING_AGE - 1) {
+    normalizedMin = MAX_MATCHING_AGE - 1;
+  }
+
+  if (normalizedMax > MAX_MATCHING_AGE) {
+    normalizedMax = MAX_MATCHING_AGE;
+  }
+  if (normalizedMax <= normalizedMin) {
+    normalizedMax = Math.min(MAX_MATCHING_AGE, normalizedMin + 1);
+  }
+
+  return {
+    min: normalizedMin,
+    max: normalizedMax,
+  };
+};
+
+const normalizeHeightValue = (value, { asString = false } = {}) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return asString ? '' : null;
+  }
+  const truncated = Math.trunc(numeric);
+  if (truncated < MIN_HEIGHT_CM || truncated > MAX_HEIGHT_CM) {
+    return asString ? '' : null;
+  }
+  return asString ? String(truncated) : truncated;
+};
+
 const formatDobForInput = (dobValue) => {
   if (!dobValue) {
     return '';
@@ -215,6 +260,7 @@ const formatDobForInput = (dobValue) => {
 
 const hydrateFormFromUser = (user) => {
   const sanitizedHobbies = sanitizeStringArray(user.hobbies);
+  const normalizedHeight = normalizeHeightValue(user.height, { asString: true });
 
   return {
     gender: pickFirstText(user.gender),
@@ -225,6 +271,7 @@ const hydrateFormFromUser = (user) => {
     geoLocation: user.geoLocation || null,
     bio: pickFirstText(user.bio),
     hobbies: sanitizedHobbies,
+    height: normalizedHeight,
     zodiac: pickFirstText(user.zodiac),
     connectionGoal: pickFirstText(
       user.connectionGoal,
@@ -239,16 +286,16 @@ const hydrateFormFromUser = (user) => {
           user.lookingFor,
           user.preferencesLookingFor,
         ) || 'All',
-      ageRange: {
+      ageRange: normalizeAgeRange({
         min: parseNumericValue(
           user.preferences?.ageRange?.min ?? user.preferenceAgeMin,
           20,
         ),
         max: parseNumericValue(
           user.preferences?.ageRange?.max ?? user.preferenceAgeMax,
-          35,
+          MAX_MATCHING_AGE,
         ),
-      },
+      }),
       distance: parseNumericValue(
         user.preferences?.distance ?? user.preferenceDistance,
         30,
@@ -291,13 +338,24 @@ export default function CompleteProfile() {
       return;
     }
 
-    if (parsedUser?.isProfileComplete) {
+    const sessionUser = parsedUser
+      ? {
+          ...parsedUser,
+          height: normalizeHeightValue(parsedUser.height) ?? parsedUser.height,
+          preferences: {
+            ...(parsedUser.preferences || {}),
+            ageRange: normalizeAgeRange(parsedUser.preferences?.ageRange),
+          },
+        }
+      : null;
+
+    if (sessionUser?.isProfileComplete) {
       setIsCheckingCompletion(false);
       navigate('/profile', { replace: true });
       return;
     }
 
-    const userId = parsedUser.id || parsedUser._id;
+    const userId = sessionUser?.id || sessionUser?._id;
     if (!userId) {
       navigate('/login');
       return;
@@ -308,16 +366,26 @@ export default function CompleteProfile() {
         const response = await axios.get(`${API_URL}/api/users/${userId}/profile`, {
           withCredentials: true,
         });
-        const serverUser = response.data?.user;
+        const rawServerUser = response.data?.user;
+        const serverUser = rawServerUser
+          ? {
+              ...rawServerUser,
+              height: normalizeHeightValue(rawServerUser.height),
+              preferences: {
+                ...(rawServerUser.preferences || {}),
+                ageRange: normalizeAgeRange(rawServerUser.preferences?.ageRange),
+              },
+            }
+          : null;
 
         if (serverUser?.isProfileComplete) {
-          sessionStorage.setItem('user', JSON.stringify({ ...parsedUser, ...serverUser }));
+          sessionStorage.setItem('user', JSON.stringify({ ...sessionUser, ...serverUser }));
           setIsCheckingCompletion(false);
           navigate('/profile', { replace: true });
           return;
         }
 
-        const mergedUser = serverUser ? { ...parsedUser, ...serverUser } : parsedUser;
+        const mergedUser = serverUser ? { ...sessionUser, ...serverUser } : sessionUser;
         const hydrated = hydrateFormFromUser(mergedUser);
         setUser(mergedUser);
         setFormData((prev) => ({ ...prev, ...hydrated }));
@@ -330,17 +398,17 @@ export default function CompleteProfile() {
         setPhotoData(initialPreview || '');
       } catch (error) {
         console.error('Failed to verify profile completion', error);
-        if (parsedUser?.isProfileComplete) {
+        if (sessionUser?.isProfileComplete) {
           setIsCheckingCompletion(false);
           navigate('/profile', { replace: true });
           return;
         }
-        setUser(parsedUser);
-        setFormData((prev) => ({ ...prev, ...hydrateFormFromUser(parsedUser) }));
+        setUser(sessionUser);
+        setFormData((prev) => ({ ...prev, ...hydrateFormFromUser(sessionUser) }));
         const fallbackPreview =
-          parsedUser.avatar ||
-          (Array.isArray(parsedUser.photoGallery) && parsedUser.photoGallery.length > 0
-            ? parsedUser.photoGallery[0]
+          sessionUser?.avatar ||
+          (Array.isArray(sessionUser?.photoGallery) && sessionUser.photoGallery.length > 0
+            ? sessionUser.photoGallery[0]
             : '');
         setPhotoPreview(fallbackPreview || '');
         setPhotoData(fallbackPreview || '');
@@ -414,25 +482,37 @@ export default function CompleteProfile() {
   }
 
   const updateField = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    setFormData((prev) => {
+      const next = { ...prev, [field]: value };
+      if (field === 'dob') {
+        next.zodiac = getZodiacFromDob(value);
+      }
+      return next;
+    });
     setErrors((prev) => {
       if (!prev[field]) {
         return prev;
       }
       const next = { ...prev };
       delete next[field];
+      if (field === 'dob' && next.zodiac) {
+        delete next.zodiac;
+      }
       return next;
     });
   };
 
   const updatePreference = (field, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      preferences: {
+    setFormData((prev) => {
+      const nextPreferences = {
         ...prev.preferences,
-        [field]: value,
-      },
-    }));
+        [field]: field === 'ageRange' ? normalizeAgeRange(value) : value,
+      };
+      return {
+        ...prev,
+        preferences: nextPreferences,
+      };
+    });
     const key = `preferences.${field}`;
     setErrors((prev) => {
       if (!prev[key]) {
@@ -453,12 +533,16 @@ export default function CompleteProfile() {
       if (!formData.dob) {
         stepErrors.dob = 'Vui lòng chọn ngày sinh.';
       }
+      const numericHeight = Number(formData.height);
+      if (!Number.isFinite(numericHeight)) {
+        stepErrors.height = 'Vui lòng nhập chiều cao hợp lệ.';
+      } else if (numericHeight < MIN_HEIGHT_CM || numericHeight > MAX_HEIGHT_CM) {
+        stepErrors.height = `Chiều cao nằm trong khoảng ${MIN_HEIGHT_CM}-${MAX_HEIGHT_CM} cm.`;
+      }
       if (!hasGeoLocation) {
         stepErrors.location = 'Cho phép HUSTLove truy cập vị trí hiện tại để tiếp tục.';
       }
-      if (!formData.bio || formData.bio.length < 30) {
-        stepErrors.bio = 'Hãy viết ít nhất 30 ký tự để tạo ấn tượng đầu tiên.';
-      }
+      
     }
     if (index === 1) {
       if (!formData.connectionGoal) {
@@ -468,17 +552,15 @@ export default function CompleteProfile() {
         stepErrors['preferences.lookingFor'] = 'Vui lòng chọn đối tượng mong muốn.';
       }
       const { ageRange } = formData.preferences;
-      if (ageRange.min < 18) {
-        stepErrors['preferences.ageRange'] = 'Độ tuổi tối thiểu phải từ 18 trở lên.';
-      }
-      if (ageRange.min >= ageRange.max) {
+      if (ageRange.min < MIN_MATCHING_AGE) {
+        stepErrors['preferences.ageRange'] = `Độ tuổi tối thiểu phải từ ${MIN_MATCHING_AGE} trở lên.`;
+      } else if (ageRange.max > MAX_MATCHING_AGE) {
+        stepErrors['preferences.ageRange'] = `Độ tuổi tối đa không vượt quá ${MAX_MATCHING_AGE}.`;
+      } else if (ageRange.min >= ageRange.max) {
         stepErrors['preferences.ageRange'] = 'Tuổi tối đa phải lớn hơn tuổi tối thiểu.';
       }
       if (formData.preferences.distance < 1) {
         stepErrors['preferences.distance'] = 'Khoảng cách phải lớn hơn 0 km.';
-      }
-      if (formData.hobbies.length === 0) {
-        stepErrors.hobbies = 'Thêm ít nhất một sở thích để mọi người dễ bắt chuyện.';
       }
     }
     if (index === 2) {
@@ -735,6 +817,7 @@ export default function CompleteProfile() {
         value && value !== 'Not updated' ? value : '';
       const currentLocation = sanitizeLocationValue(user?.location);
       const currentHometown = sanitizeLocationValue(user?.hometown);
+      const normalizedHeight = normalizeHeightValue(formData.height);
 
       const payload = {
         gender: formData.gender,
@@ -748,6 +831,7 @@ export default function CompleteProfile() {
         hobbies: formData.hobbies,
         zodiac: derivedZodiac,
         connectionGoal: formData.connectionGoal,
+        height: normalizedHeight ?? undefined,
         academicHighlights: formData.academicHighlights,
         preferences: {
           lookingFor: formData.preferences.lookingFor,
@@ -780,6 +864,8 @@ export default function CompleteProfile() {
         throw new Error('Server không trả về dữ liệu người dùng.');
       }
 
+      const responseHeight = normalizeHeightValue(nextUser.height);
+
       const mergedUser = {
         ...user,
         ...nextUser,
@@ -790,6 +876,10 @@ export default function CompleteProfile() {
         career: nextUser.career || payload.career,
         faculty: nextUser.faculty || payload.career,
         classYear: nextUser.classYear || payload.classYear || user.classYear || '',
+        height:
+          responseHeight
+          ?? payload.height
+          ?? normalizeHeightValue(user.height),
         academicHighlights: nextUser.academicHighlights || payload.academicHighlights || '',
         job: nextUser.career || nextUser.job,
         hometown:
@@ -813,7 +903,9 @@ export default function CompleteProfile() {
         preferences: {
           ...nextUser.preferences,
           lookingFor: nextUser.preferences?.lookingFor || payload.preferences.lookingFor,
-          ageRange: nextUser.preferences?.ageRange || payload.preferences.ageRange,
+          ageRange: normalizeAgeRange(
+            nextUser.preferences?.ageRange || payload.preferences.ageRange,
+          ),
           distance: nextUser.preferences?.distance || payload.preferences.distance,
           connectionGoal:
             nextUser.preferences?.connectionGoal || payload.preferences.connectionGoal,
@@ -833,7 +925,7 @@ export default function CompleteProfile() {
       window.dispatchEvent(new Event('userChanged'));
       setServerMessage('Cập nhật hồ sơ thành công.');
 
-      navigate('/feed');
+      navigate('/onboarding/photo-upload', { replace: true });
     } catch (error) {
       console.error('Failed to update profile', error);
       const message = error.response?.data?.message || error.message || 'Không thể cập nhật hồ sơ.';
@@ -920,6 +1012,31 @@ export default function CompleteProfile() {
                 ) : null}
               </div>
               {errors.dob && <p className="text-sm text-rose-500">{errors.dob}</p>}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <Ruler className="h-4 w-4 text-rose-400" />
+              Chiều cao (cm)
+              <span className="text-rose-500">*</span>
+            </label>
+            <div className="relative">
+              <Ruler className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-rose-300" />
+              <input
+                type="number"
+                inputMode="numeric"
+                min={MIN_HEIGHT_CM}
+                max={MAX_HEIGHT_CM}
+                value={formData.height}
+                onChange={(event) => updateField('height', event.target.value.replace(/[^0-9]/g, ''))}
+                placeholder={`Ví dụ: 170`}
+                className="w-full rounded-2xl border border-rose-100 bg-white px-11 py-3 text-sm text-slate-700 shadow-sm transition focus:border-rose-300 focus:outline-none focus:ring-4 focus:ring-rose-100"
+              />
+            </div>
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <span>Khoảng chấp nhận: {MIN_HEIGHT_CM}-{MAX_HEIGHT_CM} cm</span>
+              {errors.height && <span className="text-rose-500">{errors.height}</span>}
             </div>
           </div>
 
@@ -1157,13 +1274,13 @@ export default function CompleteProfile() {
                 </span>
                 <input
                   type="number"
-                  min={18}
-                  max={99}
+                  min={MIN_MATCHING_AGE}
+                  max={MAX_MATCHING_AGE - 1}
                   value={formData.preferences.ageRange.min}
                   onChange={(event) =>
                     updatePreference('ageRange', {
                       ...formData.preferences.ageRange,
-                      min: Number(event.target.value || 18),
+                      min: Number(event.target.value ?? MIN_MATCHING_AGE),
                     })
                   }
                   className="w-full rounded-2xl border border-rose-100 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm transition focus:border-rose-300 focus:outline-none focus:ring-4 focus:ring-rose-100"
@@ -1176,12 +1293,14 @@ export default function CompleteProfile() {
                 <input
                   type="number"
                   min={formData.preferences.ageRange.min + 1}
-                  max={99}
+                  max={MAX_MATCHING_AGE}
                   value={formData.preferences.ageRange.max}
                   onChange={(event) =>
                     updatePreference('ageRange', {
                       ...formData.preferences.ageRange,
-                      max: Number(event.target.value || formData.preferences.ageRange.min + 1),
+                      max: Number(
+                        event.target.value ?? formData.preferences.ageRange.min + 1,
+                      ),
                     })
                   }
                   className="w-full rounded-2xl border border-rose-100 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm transition focus:border-rose-300 focus:outline-none focus:ring-4 focus:ring-rose-100"
