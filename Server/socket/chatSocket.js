@@ -96,14 +96,16 @@ socket.on("auth_user", ({ userId }) => {
           socket.join(roomId);
           io.sockets.sockets.get(bestMatch.socketId)?.join(roomId);
 
-          // Lưu active chat
+          // Lưu active chat (gồm cả userId để dễ tra cứu later)
           activeChatRooms.set(socket.id, {
+            userId: userData._id || userData.id,
             roomId,
             partnerId: bestMatch._id || bestMatch.id,
             partnerSocketId: bestMatch.socketId,
             expiresAt
           });
           activeChatRooms.set(bestMatch.socketId, {
+            userId: bestMatch._id || bestMatch.id,
             roomId,
             partnerId: userData._id || userData.id,
             partnerSocketId: socket.id,
@@ -127,7 +129,7 @@ socket.on("auth_user", ({ userId }) => {
             user2Id: bestMatch._id || bestMatch.id,
             compatibilityScore: bestScore,
             compatibilityBreakdown: bestCompatibility.breakdown,
-            status: 'pending',
+            status: 'active',
             expiresAt,
             tempChatId: tempChat._id  
           });
@@ -243,20 +245,38 @@ socket.on("auth_user", ({ userId }) => {
           return;
         }
 
-        const userId = socket.data.userId;
-        const isUser1 = match.user1Id.toString() === userId;
-
-        // ✅ Cập nhật trạng thái like
-        if (isUser1) {
-          match.user1Liked = true;
-          match.user1LikedAt = new Date();
-        } else {
-          match.user2Liked = true;
-          match.user2LikedAt = new Date();
+        // Resolve userId: prefer attached socket data, then activeChatRooms, then TemporaryChat as fallback
+        let userId = socket.data.userId;
+        if (!userId) {
+          const roomInfo = activeChatRooms.get(socket.id);
+          if (roomInfo && roomInfo.userId) {
+            userId = roomInfo.userId;
+            console.log(`ℹ️ Resolved userId from activeChatRooms: ${userId}`);
+          }
         }
 
-        await match.save();
-        console.log(`💖 User ${userId} liked ${isUser1 ? "user2" : "user1"}!`);
+        if (!userId && match.tempChatId) {
+          try {
+            const temp = await TemporaryChat.findById(match.tempChatId);
+            if (temp) {
+              if (temp.user1SocketId === socket.id) userId = temp.user1Id?.toString();
+              else if (temp.user2SocketId === socket.id) userId = temp.user2Id?.toString();
+              if (userId) console.log(`ℹ️ Resolved userId from TemporaryChat: ${userId}`);
+            }
+          } catch (e) {
+            console.error('❌ Error resolving userId from temp chat:', e);
+          }
+        }
+
+        const isUser1 = userId ? (match.user1Id.toString() === userId) : false;
+
+        // ✅ Atomically update the like flag to avoid race conditions
+        const update = isUser1
+          ? { $set: { user1Liked: true, user1LikedAt: new Date() } }
+          : { $set: { user2Liked: true, user2LikedAt: new Date() } };
+
+        const updatedMatch = await Match.findByIdAndUpdate(matchId, update, { new: true });
+        console.log(`💖 User ${userId || 'UNKNOWN'} liked ${isUser1 ? "user2" : "user1"}! Updated match: ${updatedMatch._id}`);
 
         // ✅ Gửi tín hiệu cho partner biết rằng họ được like
         const chatRoom = activeChatRooms.get(socket.id);
@@ -265,20 +285,19 @@ socket.on("auth_user", ({ userId }) => {
         }
 
         // ✅ Nếu cả hai cùng like → tạo hoặc dùng lại conversation
-        if (match.user1Liked && match.user2Liked) {
-          match.status = "matched";
-          match.matchedAt = new Date();
+        if (updatedMatch.user1Liked && updatedMatch.user2Liked) {
+          // mark matched and set matchedAt atomically later after conversation created
 
-          // 🔍 Tìm xem đã có conversation giữa hai người chưa
+          // 🔍 Tìm xem đã có conversation giữa hai người chưa (dùng updatedMatch)
           let conversation = await Conversation.findOne({
-            participants: { $all: [match.user1Id, match.user2Id], $size: 2 },
+            participants: { $all: [updatedMatch.user1Id, updatedMatch.user2Id], $size: 2 },
           });
 
           if (!conversation) {
             // 🆕 Chưa có → tạo mới
             conversation = await Conversation.create({
-              participants: [match.user1Id, match.user2Id],
-              matchId: match._id,
+              participants: [updatedMatch.user1Id, updatedMatch.user2Id],
+              matchId: updatedMatch._id,
               lastMessage: {
                 text: "Hai bạn đã kết nối! 💕",
                 timestamp: new Date(),
@@ -289,12 +308,14 @@ socket.on("auth_user", ({ userId }) => {
             console.log(`♻️ Existing conversation reused: ${conversation._id}`);
           }
 
-          match.conversationId = conversation._id;
-          await match.save();
+          // Atomically update match with conversationId and status
+          await Match.findByIdAndUpdate(updatedMatch._id, {
+            $set: { conversationId: conversation._id, status: 'matched', matchedAt: new Date() }
+          });
 
           // ✅ Chuyển tin nhắn tạm (3 phút) sang Conversation chính
-          if (match.tempChatId) {
-            const tempChat = await TemporaryChat.findById(match.tempChatId);
+          if (updatedMatch.tempChatId) {
+            const tempChat = await TemporaryChat.findById(updatedMatch.tempChatId);
             if (tempChat && tempChat.messages.length > 0) {
               const tempMessages = tempChat.messages.map((msg) => ({
                 senderId: msg.senderId,
@@ -306,7 +327,7 @@ socket.on("auth_user", ({ userId }) => {
                 $push: { messages: { $each: tempMessages } },
               });
 
-              await TemporaryChat.findByIdAndDelete(match.tempChatId);
+              await TemporaryChat.findByIdAndDelete(updatedMatch.tempChatId);
               console.log(`💬 Moved ${tempMessages.length} temp messages → ${conversation._id}`);
             }
           }
@@ -473,12 +494,20 @@ socket.on("auth_user", ({ userId }) => {
 
     // ==========================================
     // 7. JOIN CONVERSATION ROOM (để nhận tin nhắn)
+    // Accept both singular/plural event names from clients
     // ==========================================
-    socket.on("join_conversations", async (userId) => {
-      socket.data.userId = userId;
-      socket.join(`user_${userId}`);
-      console.log(`👤 User ${userId} joined personal room`);
-    });
+    const joinHandler = async (userId) => {
+      try {
+        socket.data.userId = userId;
+        socket.join(`user_${userId}`);
+        console.log(`👤 User ${userId} joined personal room (socket ${socket.id})`);
+      } catch (err) {
+        console.error('❌ Error in join handler:', err);
+      }
+    };
+
+    socket.on("join_conversations", joinHandler);
+    socket.on("join_conversation", joinHandler);
 
     // ==========================================
     // 8. DISCONNECT (SỬA LẠI)

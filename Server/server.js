@@ -6,7 +6,6 @@ import { Server } from "socket.io";
 import path from "path";
 import { fileURLToPath } from "url";
 
-import { initMatchSocket } from "./socket/matchSocket.js";
 import authRoutes from "./routes/authRoutes.js";
 import matchRoutes from "./routes/matchRoutes.js";  // NEW
 import connectDB from "./config/db.js";
@@ -128,7 +127,6 @@ connectDB();
 
 
 // Socket.IO logic
-initMatchSocket(io);
 initChatSocket(io);
 initPostSocket(io);
 initNotificationSocket(io);

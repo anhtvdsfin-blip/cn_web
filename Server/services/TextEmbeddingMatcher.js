@@ -92,58 +92,69 @@ class TextEmbeddingMatcher {
   }
 
   async matchHobbyLists(hobbies1, hobbies2) {
-  if (!hobbies1?.length || !hobbies2?.length) {
+  // Normalize inputs: split any comma-separated hobby strings into individual items
+  const normalizeList = (arr) => (arr || []).flatMap(item => {
+    if (typeof item !== 'string') return [];
+    return item.split(/[,;，；]/).map(s => s.trim()).filter(Boolean);
+  });
+
+  const list1 = normalizeList(hobbies1);
+  const list2 = normalizeList(hobbies2);
+
+  if (!list1.length || !list2.length) {
     return { score: 0, matches: [], totalMatches: 0 };
   }
 
   console.log('\n🎯 HOBBY MATCHING DEBUG:');
-  console.log(`User1 hobbies: [${hobbies1.join(', ')}]`);
-  console.log(`User2 hobbies: [${hobbies2.join(', ')}]`);
+  console.log('Raw User1 hobbies:', hobbies1);
+  console.log('Raw User2 hobbies:', hobbies2);
+  console.log('Normalized User1 hobbies:', list1);
+  console.log('Normalized User2 hobbies:', list2);
 
   const embeddings1 = await Promise.all(
-    hobbies1.map(h => this.getEmbedding(h))
+    list1.map(h => this.getEmbedding(h))
   );
   const embeddings2 = await Promise.all(
-    hobbies2.map(h => this.getEmbedding(h))
+    list2.map(h => this.getEmbedding(h))
   );
 
   const matches = [];
   let totalScore = 0;
 
-  for (let i = 0; i < hobbies1.length; i++) {
+  for (let i = 0; i < list1.length; i++) {
     let maxSim = 0;
     let bestMatchIdx = -1;
-    
-    // ✅ DEBUG: In tất cả các so sánh
-    console.log(`\n  Comparing "${hobbies1[i]}":`);
-    
-    for (let j = 0; j < hobbies2.length; j++) {
+
+    console.log(`\n  Comparing "${list1[i]}":`);
+
+    for (let j = 0; j < list2.length; j++) {
       const sim = this.cosineSimilarity(embeddings1[i], embeddings2[j]);
-      
-      console.log(`    → "${hobbies2[j]}": ${(sim * 100).toFixed(1)}%`);
-      
+
+      console.log(`    → "${list2[j]}": ${(sim * 100).toFixed(1)}%`);
+
       if (sim > maxSim) {
         maxSim = sim;
         bestMatchIdx = j;
       }
     }
 
-    console.log(`    ✅ Best match: "${hobbies2[bestMatchIdx]}" (${(maxSim * 100).toFixed(1)}%)`);
+    const bestMatch = bestMatchIdx !== -1 ? list2[bestMatchIdx] : null;
+    console.log(`    ✅ Best match: "${bestMatch}" (${(maxSim * 100).toFixed(1)}%)`);
 
-    if (maxSim >= 0.6 && bestMatchIdx !== -1) {
+    if (maxSim >= 0 && bestMatchIdx !== -1) {
       matches.push({
-        hobby1: hobbies1[i],
-        hobby2: hobbies2[bestMatchIdx],
+        hobby1: list1[i],
+        hobby2: list2[bestMatchIdx],
         similarity: Math.round(maxSim * 100) / 100
       });
       totalScore += maxSim;
     }
   }
 
-  const score = (totalScore / hobbies1.length) * 100;
+  const score = (totalScore / list1.length) * 100;
 
   console.log(`\n  📊 Final hobby score: ${score.toFixed(1)}%`);
-  console.log(`  🎯 Matches found: ${matches.length}/${hobbies1.length}`);
+  console.log(`  🎯 Matches found: ${matches.length}/${list1.length}`);
 
   return {
     score: Math.round(score * 10) / 10,

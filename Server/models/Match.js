@@ -48,8 +48,26 @@ const matchSchema = new mongoose.Schema({
   // Status
   status: {
     type: String,
-    enum: ['active', 'expired', 'closed'],
+    enum: ['active', 'matched', 'expired', 'closed'],
     default: 'active'
+  },
+  
+  // Likes during temp chat
+  user1Liked: {
+    type: Boolean,
+    default: false
+  },
+  user1LikedAt: Date,
+  user2Liked: {
+    type: Boolean,
+    default: false
+  },
+  user2LikedAt: Date,
+
+  // Linked conversation after matching
+  conversationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Conversation'
   },
   
   // Compatibility score
