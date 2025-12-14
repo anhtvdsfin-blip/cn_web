@@ -10,6 +10,9 @@ export default function LibraryInvite() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalRoom, setModalRoom] = useState(null);
   const [modalEmail, setModalEmail] = useState('');
+  const [selectedUserId, setSelectedUserId] = useState('');
+  const [matchedUsers, setMatchedUsers] = useState([]);
+  const [loadingMatches, setLoadingMatches] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createName, setCreateName] = useState('');
   const [createSubject, setCreateSubject] = useState('');
@@ -105,8 +108,28 @@ export default function LibraryInvite() {
 
   function openInviteModal(room) {
     setModalRoom(room);
-    setModalEmail('');
+    setSelectedUserId('');
     setModalOpen(true);
+    
+    // Fetch matched users
+    if (!ctxUser) return;
+    setLoadingMatches(true);
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE || ''}/api/match/matched-users/${ctxUser.id || ctxUser._id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setMatchedUsers(data.matchedUsers || []);
+        } else {
+          setMatchedUsers([]);
+        }
+      } catch (err) {
+        console.error('Failed to fetch matched users:', err);
+        setMatchedUsers([]);
+      } finally {
+        setLoadingMatches(false);
+      }
+    })();
   }
 
   function openCreateModal() {
@@ -202,11 +225,12 @@ export default function LibraryInvite() {
   function closeInviteModal() {
     setModalOpen(false);
     setModalRoom(null);
-    setModalEmail('');
+    setSelectedUserId('');
+    setMatchedUsers([]);
   }
 
   async function handleModalSend() {
-    if (!modalEmail.trim()) return alert('Vui lòng nhập email.');
+    if (!selectedUserId) return alert('Vui lòng chọn một người để mời.');
     if (!modalRoom) return;
 
     try {
@@ -215,7 +239,7 @@ export default function LibraryInvite() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           senderId: ctxUser.id || ctxUser._id,
-          receiverEmail: modalEmail.trim(),
+          receiverId: selectedUserId,
           note: `Mời tham gia phòng ${modalRoom.name}`,
         }),
       });
@@ -421,19 +445,35 @@ export default function LibraryInvite() {
                 <button onClick={closeInviteModal} className="text-slate-400 hover:text-slate-600"><X className="h-5 w-5" /></button>
               </div>
 
-              <label className="mt-4 block text-sm">
-                <span className="text-xs text-slate-500">Email</span>
-                <input
-                  value={modalEmail}
-                  onChange={(e) => setModalEmail(e.target.value)}
-                  placeholder="nguoilienhe@example.com"
-                  className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm shadow-sm"
-                />
-              </label>
+              <div className="mt-4">
+                {loadingMatches ? (
+                  <div className="text-sm text-slate-500">Đang tải danh sách người matching...</div>
+                ) : matchedUsers.length === 0 ? (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                    Bạn chưa có người matching nào. Hãy dùng chức năng Match để tìm người.
+                  </div>
+                ) : (
+                  <label className="block text-sm">
+                    <span className="text-xs text-slate-500">Chọn người để mời</span>
+                    <select
+                      value={selectedUserId}
+                      onChange={(e) => setSelectedUserId(e.target.value)}
+                      className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm shadow-sm"
+                    >
+                      <option value="">-- Chọn người --</option>
+                      {matchedUsers.map(user => (
+                        <option key={user._id || user.id} value={user._id || user.id}>
+                          {user.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
 
               <div className="mt-4 flex justify-end gap-3">
                 <button onClick={closeInviteModal} className="rounded-full border border-slate-200 px-4 py-2 text-sm">Hủy</button>
-                <button onClick={handleModalSend} className="rounded-full bg-rose-500 px-4 py-2 text-sm text-white">Gửi</button>
+                <button onClick={handleModalSend} disabled={!selectedUserId || loadingMatches} className={`rounded-full px-4 py-2 text-sm text-white ${(!selectedUserId || loadingMatches) ? 'bg-slate-200 cursor-not-allowed' : 'bg-rose-500'}`}>Gửi</button>
               </div>
             </div>
           </div>
