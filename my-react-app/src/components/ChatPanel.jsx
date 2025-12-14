@@ -347,8 +347,12 @@ export default function ChatPanel({ selectedConversationId, conversations, onCon
     [handleSendMessage]
   );
 
+  const handleUseOpeningMove = useCallback((text) => {
+    setInputValue(text || '');
+  }, []);
+
   return (
-    <section className="flex h-full flex-col rounded-[32px] border border-white/60 bg-white/75 shadow-[0_40px_120px_-70px_rgba(233,114,181,0.65)]">
+    <section className="flex h-full min-h-0 flex-col rounded-[32px] border border-white/60 bg-white/75 shadow-[0_40px_120px_-70px_rgba(233,114,181,0.65)] [writing-mode:horizontal-tb] [transform:none]">
       {selectedConversation ? (
         <>
           <ChatHeader
@@ -360,7 +364,46 @@ export default function ChatPanel({ selectedConversationId, conversations, onCon
             onBlock={handleBlock}
             actionLoading={actionLoading}
           />
-          <MessageList ref={messagesRef} messages={messages} isTyping={isTyping} onScroll={handleMessagesScroll} />
+          {/* Opening Move banner (shown above messages area when empty) */}
+          {messages.length === 0 && (
+            <div className="px-6 py-4">
+              {selectedConversation?.partnerOpeningMove ? (
+                <div className="max-w-full">
+                  <div className="rounded-2xl bg-teal-50 p-4 shadow-md">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-teal-300 to-teal-400 text-white">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-5 w-5 text-rose-300">
+                          <path fill="currentColor" d="M12 21s-6.716-4.35-9.193-6.49C.923 11.987 3.06 7 6.5 7c1.925 0 3.02 1.06 3.5 2.02C10.48 8.06 11.575 7 13.5 7 16.94 7 19.077 11.987 21.193 14.51 18.716 16.65 12 21 12 21z"/>
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-slate-800">{selectedConversation.partnerName} đã chọn câu hỏi mở đầu</p>
+                        <div className="mt-2 max-w-[90%] overflow-hidden rounded-lg bg-teal-100/90 p-3 text-sm text-slate-800">
+                          {selectedConversation.partnerOpeningMove.text}
+                        </div>
+                        <div className="mt-3">
+                          <button
+                            type="button"
+                            onClick={() => handleUseOpeningMove(selectedConversation.partnerOpeningMove.text)}
+                            className="inline-flex items-center gap-2 rounded-full bg-teal-200 px-3 py-1 text-xs font-semibold text-slate-800"
+                          >
+                            Bấm để gửi ngay câu hỏi này
+                          </button>
+                        </div>
+                      </div>
+                      <div className="ml-3 text-rose-300">♡</div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-white/60 p-4">
+                  <p className="text-sm text-slate-700">Gửi lời chào đầu tiên của bạn đến {selectedConversation.partnerName}!</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <MessageList ref={messagesRef} messages={messages} isTyping={isTyping} onScroll={handleMessagesScroll} conversation={selectedConversation} onUseOpeningMove={handleUseOpeningMove} />
           <MessageInput value={inputValue} onChange={handleInputChange} onSend={handleSendFromInput} onTyping={handleTyping} />
         </>
       ) : (

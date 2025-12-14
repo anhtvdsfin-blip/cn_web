@@ -7,6 +7,7 @@ import Register from "./pages/Register";
 import Profile from "./pages/Profile";
 import CompleteProfile from "./pages/CompleteProfile";
 import PhotoManagement from "./pages/PhotoManagement";
+import OpeningMoveOnboarding from "./pages/OpeningMoveOnboarding";
 import Messenger from "./pages/Messenger";
 import LibraryInvite from './pages/LibraryInvite';
 import { io } from "socket.io-client";
@@ -127,6 +128,7 @@ function App() {
           <Route path="/ai-chat" element={<AIChatPage />} />
           <Route path="/home" element={<BlankPage />} />
           <Route path="/onboarding/photo-upload" element={<PhotoManagement />} />
+          <Route path="/onboarding/opening-move" element={<OpeningMoveOnboarding onComplete={() => { window.location.href = '/feed'; }} />} />
           <Route path="/community" element={<Community />} />
         </Routes>
       </SocketContext.Provider>

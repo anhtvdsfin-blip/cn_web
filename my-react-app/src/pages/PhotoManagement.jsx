@@ -205,7 +205,8 @@ export default function PhotoManagement() {
 
       setStatusTone('success');
       setStatusMessage(isEditMode ? 'Album ảnh đã được cập nhật.' : 'Album ảnh đã lưu, chuẩn bị khám phá nhé!');
-      navigate(isEditMode ? '/profile' : '/feed', { replace: true });
+      // If we are in onboarding flow (not edit mode) navigate to opening move onboarding
+      navigate(isEditMode ? '/profile' : '/onboarding/opening-move', { replace: true });
     } catch (error) {
       console.error('Không thể lưu album ảnh', error);
       setStatusTone('error');

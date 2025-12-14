@@ -35,6 +35,18 @@ export default function Home() {
   const [deckError, setDeckError] = useState('');
   const [isProcessingAction, setIsProcessingAction] = useState(false);
   const [actionError, setActionError] = useState('');
+  // Filters state for Search Metrics panel
+  const [filters, setFilters] = useState({
+    distance: 3,
+    ageMin: 18,
+    ageMax: 25,
+    heightMin: 150,
+    heightMax: 175,
+    cohortMin: 60,
+    cohortMax: 69,
+  });
+  const [appliedFilters, setAppliedFilters] = useState({});
+  const [showFilters, setShowFilters] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const activeProfile = matchQueue[activeIndex];
@@ -78,7 +90,23 @@ export default function Home() {
       setActionError('');
 
       try {
-        const response = await fetch(`${API_URL}/api/findlove/${userId}/deck`, {
+        // build url with applied filters
+        const params = new URLSearchParams();
+        if (appliedFilters.distance != null) params.append('distance', appliedFilters.distance);
+        if (appliedFilters.ageRange) {
+          if (appliedFilters.ageRange.min != null) params.append('ageMin', appliedFilters.ageRange.min);
+          if (appliedFilters.ageRange.max != null) params.append('ageMax', appliedFilters.ageRange.max);
+        }
+        if (appliedFilters.heightRange) {
+          if (appliedFilters.heightRange.min != null) params.append('heightMin', appliedFilters.heightRange.min);
+          if (appliedFilters.heightRange.max != null) params.append('heightMax', appliedFilters.heightRange.max);
+        }
+        if (appliedFilters.cohortRange) {
+          if (appliedFilters.cohortRange.min != null) params.append('cohortMin', appliedFilters.cohortRange.min);
+          if (appliedFilters.cohortRange.max != null) params.append('cohortMax', appliedFilters.cohortRange.max);
+        }
+        const url = `${API_URL}/api/findlove/${userId}/deck${params.toString() ? `?${params.toString()}` : ''}`;
+        const response = await fetch(url, {
           method: 'GET',
           credentials: 'include',
           signal: controller.signal,
@@ -112,7 +140,7 @@ export default function Home() {
     return () => {
       controller.abort();
     };
-  }, [API_URL, userId]);
+  }, [API_URL, userId, appliedFilters]);
 
   useEffect(() => {
     setPhotoIndex(0);
@@ -327,15 +355,155 @@ export default function Home() {
               <aside className="hidden w-full max-w-[280px] flex-col gap-6 rounded-[28px] border border-rose-100/70 bg-white/80 p-6 text-sm text-rose-500 shadow-[0_18px_40px_-30px_rgba(188,144,255,0.6)] lg:flex">
                 <div>
                   <h3 className="text-xs font-semibold uppercase tracking-[0.35em] text-rose-400/80">Search metrics</h3>
-                  <div className="mt-5 space-y-4">
-                    <div className="flex items-center justify-between rounded-[20px] border border-rose-100 bg-white px-4 py-3 text-xs text-slate-600">
-                      <span className="font-semibold text-rose-500/90">Khoảng cách</span>
-                      <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">{finderDistance}</span>
-                    </div>
-                    <div className="flex items-center justify-between rounded-[20px] border border-rose-100 bg-white px-4 py-3 text-xs text-slate-600">
-                      <span className="font-semibold text-rose-500/90">Độ tuổi</span>
-                      <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">{finderAgeRange}</span>
-                    </div>
+                  <div className="mt-5">
+                    {!showFilters ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between rounded-[20px] border border-rose-100 bg-white px-4 py-3 text-xs text-slate-600">
+                          <span className="font-semibold text-rose-500/90">Khoảng cách</span>
+                          <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">Trong {filters.distance}km</span>
+                        </div>
+                        <div className="flex items-center justify-between rounded-[20px] border border-rose-100 bg-white px-4 py-3 text-xs text-slate-600">
+                          <span className="font-semibold text-rose-500/90">Độ tuổi</span>
+                          <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">{filters.ageMin} - {filters.ageMax >= 30 ? '30+' : filters.ageMax} tuổi</span>
+                        </div>
+                        <div className="flex items-center justify-between rounded-[20px] border border-rose-100 bg-white px-4 py-3 text-xs text-slate-600">
+                          <span className="font-semibold text-rose-500/90">Chiều cao</span>
+                          <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">{filters.heightMin}cm - {filters.heightMax >= 190 ? '190+' : filters.heightMax}cm</span>
+                        </div>
+                        <div className="flex items-center justify-between rounded-[20px] border border-rose-100 bg-white px-4 py-3 text-xs text-slate-600">
+                          <span className="font-semibold text-rose-500/90">Khóa</span>
+                          <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">K{filters.cohortMin} - K{filters.cohortMax}</span>
+                        </div>
+                        <div className="flex justify-center">
+                          <button
+                            onClick={() => setShowFilters(true)}
+                            className="mt-2 rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-100"
+                          >
+                            Sửa bộ lọc
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        {/* Distance */}
+                        <div className="rounded-[20px] border border-rose-100 bg-white px-4 py-4 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-rose-500/90">Khoảng cách</span>
+                            <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">Trong {filters.distance}km</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="50"
+                            value={filters.distance}
+                            onChange={(e) => setFilters(prev => ({ ...prev, distance: Number(e.target.value) }))}
+                            className="mt-3 w-full accent-rose-500"
+                          />
+                        </div>
+
+                        {/* Age */}
+                        <div className="rounded-[20px] border border-rose-100 bg-white px-4 py-4 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-rose-500/90">Độ tuổi</span>
+                            <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">{filters.ageMin} - {filters.ageMax >= 30 ? '30+' : filters.ageMax} tuổi</span>
+                          </div>
+                          <div className="mt-3 flex gap-2">
+                            <input
+                              type="range"
+                              min="18"
+                              max="60"
+                              value={filters.ageMin}
+                              onChange={(e) => setFilters(prev => ({ ...prev, ageMin: Math.min(Number(e.target.value), prev.ageMax - 1) }))}
+                              className="w-full accent-rose-500"
+                            />
+                            <input
+                              type="range"
+                              min="18"
+                              max="60"
+                              value={filters.ageMax}
+                              onChange={(e) => setFilters(prev => ({ ...prev, ageMax: Math.max(Number(e.target.value), prev.ageMin + 1) }))}
+                              className="w-full accent-rose-500"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Height */}
+                        <div className="rounded-[20px] border border-rose-100 bg-white px-4 py-4 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-rose-500/90">Chiều cao</span>
+                            <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">{filters.heightMin}cm - {filters.heightMax >= 190 ? '190+' : filters.heightMax}cm</span>
+                          </div>
+                          <div className="mt-3 flex gap-2">
+                            <input
+                              type="range"
+                              min="140"
+                              max="210"
+                              value={filters.heightMin}
+                              onChange={(e) => setFilters(prev => ({ ...prev, heightMin: Math.min(Number(e.target.value), prev.heightMax - 1) }))}
+                              className="w-full accent-rose-500"
+                            />
+                            <input
+                              type="range"
+                              min="140"
+                              max="210"
+                              value={filters.heightMax}
+                              onChange={(e) => setFilters(prev => ({ ...prev, heightMax: Math.max(Number(e.target.value), prev.heightMin + 1) }))}
+                              className="w-full accent-rose-500"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Cohort (Khóa) */}
+                        <div className="rounded-[20px] border border-rose-100 bg-white px-4 py-4 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-rose-500/90">Khóa</span>
+                            <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">K{filters.cohortMin} - K{filters.cohortMax}</span>
+                          </div>
+                          <div className="mt-3 flex gap-2">
+                            <input
+                              type="range"
+                              min="60"
+                              max="69"
+                              value={filters.cohortMin}
+                              onChange={(e) => setFilters(prev => ({ ...prev, cohortMin: Math.min(Number(e.target.value), prev.cohortMax) }))}
+                              className="w-full accent-rose-500"
+                            />
+                            <input
+                              type="range"
+                              min="60"
+                              max="69"
+                              value={filters.cohortMax}
+                              onChange={(e) => setFilters(prev => ({ ...prev, cohortMax: Math.max(Number(e.target.value), prev.cohortMin) }))}
+                              className="w-full accent-rose-500"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              const payload = {
+                                distance: filters.distance,
+                                ageRange: { min: filters.ageMin, max: filters.ageMax },
+                                heightRange: { min: filters.heightMin, max: filters.heightMax },
+                                cohortRange: { min: filters.cohortMin, max: filters.cohortMax }
+                              };
+                              setAppliedFilters(payload);
+                              setShowFilters(false);
+                            }}
+                            className="mt-2 flex-1 rounded-full bg-rose-500 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-600"
+                          >
+                            Áp dụng
+                          </button>
+                          <button
+                            onClick={() => setShowFilters(false)}
+                            className="mt-2 flex-1 rounded-full bg-white border border-rose-100 px-4 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                          >
+                            Hủy
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </aside>
@@ -427,7 +595,8 @@ export default function Home() {
                           >
                             <div className="flex flex-wrap items-end gap-3 text-[2.5rem] font-semibold tracking-tight md:text-[2.8rem]">
                               <h2>{displayProfile.name}</h2>
-                              <span className="rounded-full bg-white/15 px-3 py-1 text-lg font-medium">{displayProfile.age}</span>
+                              
+                              <span className="relative -top-2 rounded-full bg-white/15 px-3 py-1 text-lg font-medium">{displayProfile.age}</span>
                             </div>
 
                             <div className="mt-5 flex flex-wrap items-center gap-3 text-sm font-semibold text-teal-100">
