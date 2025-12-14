@@ -310,7 +310,7 @@ export default function LibraryInvite() {
   const pending = invites.filter(i => i.status === 'pending' || i.status === 'Pending');
 
   return (
-    <div className="min-h-screen bg-[#fff8fb]">
+    <div className="min-h-screen bg-[#fff8fb] pt-16">
       <Navbar />
       <div className="mx-auto w-full max-w-6xl px-4 py-16">
 

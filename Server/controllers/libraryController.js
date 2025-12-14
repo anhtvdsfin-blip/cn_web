@@ -1,5 +1,7 @@
 import LibraryRoom from '../models/LibraryRoom.js';
 import User from '../models/User.js';
+import { notificationService } from '../services/NotificationService.js';
+import { emitNotification } from '../socket/notificationSocket.js';
 
 export const createRoom = async (req, res) => {
   try {
@@ -11,7 +13,8 @@ export const createRoom = async (req, res) => {
       subject: subject?.trim(),
       description: description?.trim(),
       capacity: Number(capacity),
-      occupants: [],
+      // If the creator ID is provided, include them as the first occupant
+      occupants: createdBy ? [createdBy] : [],
       createdBy: createdBy || undefined,
     };
 
@@ -91,6 +94,30 @@ export const createInviteForRoom = async (req, res) => {
 
     // return the last pushed invite (with _id)
     const savedInvite = room.invites[room.invites.length - 1];
+
+    // Create a persistent notification for the receiver and emit it in real-time
+    try {
+      const sender = await User.findById(senderId).select('name');
+      const notif = await notificationService.createNotification({
+        recipientId: receiverId,
+        senderId,
+        type: 'library_invite',
+        content: `${sender?.name || 'Ai đó'} đã mời bạn vào phòng ${room.name}`,
+        isRead: false,
+        roomId: room._id
+      });
+
+      // emit via both notification socket namespace and legacy post socket room (if available)
+      if (req.io) {
+        // new notification socket (emits 'new_notification' to notifications_<userId>)
+        try { emitNotification(req.io, receiverId, notif); } catch (e) { console.warn('emitNotification failed', e); }
+        // legacy emit to user room used by postSocket (emits 'notification:new')
+        try { req.emitNotification?.(receiverId, notif); } catch (e) { console.warn('req.emitNotification failed', e); }
+      }
+    } catch (err) {
+      console.error('❌ Failed to create/emit notification for invite:', err);
+    }
+
     res.status(201).json({ success: true, invite: savedInvite, roomId: room._id });
   } catch (err) {
     console.error('❌ Failed to create invite for room:', err);
@@ -194,6 +221,27 @@ export const acceptInvite = async (req, res) => {
     room.occupants.push(userId);
     room.invites[inviteIndex].status = 'accepted';
     await room.save();
+
+    // Notify the original sender that their invite was accepted
+    try {
+      const senderIdFromInvite = invite.senderId;
+      const receiverUser = await User.findById(userId).select('name');
+      const notif = await notificationService.createNotification({
+        recipientId: senderIdFromInvite,
+        senderId: userId,
+        type: 'library_invite_accepted',
+        content: `${receiverUser?.name || 'Ai đó'} đã chấp nhận lời mời vào phòng ${room.name}`,
+        isRead: false,
+        roomId: room._id
+      });
+
+      if (req.io) {
+        try { emitNotification(req.io, senderIdFromInvite, notif); } catch (e) { console.warn('emitNotification failed', e); }
+        try { req.emitNotification?.(senderIdFromInvite, notif); } catch (e) { console.warn('req.emitNotification failed', e); }
+      }
+    } catch (err) {
+      console.error('❌ Failed to create/emit notification for accept:', err);
+    }
 
     res.json({ success: true, room });
   } catch (err) {

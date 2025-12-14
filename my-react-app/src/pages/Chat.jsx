@@ -16,7 +16,7 @@ export default function RandomChat() {
   const [compatibilityScore, setCompatibilityScore] = useState(null);
   const API_URL = import.meta.env.VITE_API_URL;
 
-  const newSocket = useContext(SocketContext);
+  const { socket: newSocket } = useContext(SocketContext) ?? {};
   
   // ✅ TIMER STATE
   const [timeRemaining, setTimeRemaining] = useState(180); // 3 phút = 180 giây

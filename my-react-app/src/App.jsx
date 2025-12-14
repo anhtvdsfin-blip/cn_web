@@ -11,6 +11,7 @@ import OpeningMoveOnboarding from "./pages/OpeningMoveOnboarding";
 import Messenger from "./pages/Messenger";
 import LibraryInvite from './pages/LibraryInvite';
 import Community from "./pages/Community";
+import Chat from "./pages/Chat";
 import { io } from "socket.io-client";
 import { useState, useEffect } from "react";
 import { SocketContext, UserContext } from "./contexts";
@@ -61,6 +62,17 @@ function App() {
     newSocket.on("connect", () => {
       console.log("✅ Socket connected:", newSocket.id);
       newSocket.emit("set_user", { userId: user.id });
+      // Ensure user joins legacy post socket room and notification socket room
+      try {
+        newSocket.emit('user:join', user.id);
+      } catch (e) {
+        console.warn('user:join emit failed', e);
+      }
+      try {
+        newSocket.emit('auth_notification', { userId: user.id });
+      } catch (e) {
+        console.warn('auth_notification emit failed', e);
+      }
     });
 
     setSocket(newSocket);
@@ -122,7 +134,7 @@ function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/profile/manage-photos" element={<PhotoManagement />} />
-          <Route path="/chat" element={<BlankPage />} />
+          <Route path="/chat" element={<Chat />} />
           <Route path="/messenger" element={<Messenger />} />
           <Route path="/library-invite" element={<LibraryInvite />} />
           <Route path="/complete-profile" element={<CompleteProfile />} />

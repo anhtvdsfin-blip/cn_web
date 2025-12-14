@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useContext } from 'react';
 import { Heart, MessageCircle, Send, X, Trash2, MoreHorizontal } from 'lucide-react'; 
-import socket from "../socket/postSocket.js";
+import { SocketContext } from '../contexts';
 import toast from 'react-hot-toast';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -21,8 +21,7 @@ export default function Community() {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [notifications, setNotifications] = useState([]);
-  const [showNotifications, setShowNotifications] = useState(false);
+  const { socket, notifications, setNotifications, unreadCount, setUnreadCount } = useContext(SocketContext) ?? {};
   const [expandedComments, setExpandedComments] = useState({});
   const [commentText, setCommentText] = useState({});
   const [loadingComments, setLoadingComments] = useState({});
@@ -81,6 +80,8 @@ export default function Community() {
   // SOCKET REALTIME - ✅ FIXED với Block Filter + Delete events
   // ==============================
   useEffect(() => {
+    if (!socket) return;
+
     if (userId) {
       socket.emit('user:join', userId);
     }
@@ -123,14 +124,22 @@ socket.on('post:comment', ({ postId, comment, userId: commentUserId }) => {
     socket.on('notification:new', (notification) => {
       const notificationRecipientId = notification.recipientId?.toString?.() || notification.recipientId;
       const currentUserId = userId?.toString?.() || userId;
-      
+
       if (notificationRecipientId === currentUserId) {
-        setNotifications(prev => [{
-          id: Date.now(),
+        // push to global notifications stored in SocketContext so Navbar shows it
+        setNotifications?.(prev => [{
+          _id: notification._id || String(Date.now()),
+          isRead: false,
           type: notification.type,
-          message: `${notification.senderName} ${notification.content}`,
+          content: notification.content,
+          senderName: notification.senderName,
+          createdAt: notification.createdAt || new Date().toISOString(),
           postId: notification.postId
-        }, ...prev]);
+        }, ...(prev || [])]);
+
+        // increment unread count in global context
+        setUnreadCount?.(c => (Number(c || 0) + 1));
+
         toast.success(notification.content);
       }
     });
@@ -181,7 +190,7 @@ socket.on('comment:delete', ({ commentId, postId, deletedBy }) => {
       socket.off('post:delete');
       socket.off('comment:delete');
     };
-  }, [userId, blockedUsers]); // ✅ THÊM blockedUsers vào dependencies
+  }, [userId, blockedUsers, socket, setNotifications, setUnreadCount]); // ✅ THÊM blockedUsers + socket into dependencies
     
   // ==============================
   // BLOCK OR REPORT - FIXED VERSION
@@ -507,58 +516,9 @@ const createComment = async (postId) => {
     <div className="min-h-screen bg-[#fff5f8]">
       <div className="mx-auto max-w-2xl px-4 pt-24 pb-16">
         {/* HEADER */}
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-6">
           <h1 className="text-2xl font-semibold text-rose-600">Community</h1>
-          <button
-            onClick={() => setShowNotifications(!showNotifications)}
-            className="relative flex h-10 w-10 items-center justify-center rounded-full bg-rose-100 text-rose-600 hover:bg-rose-200"
-          >
-            <MessageCircle className="h-5 w-5" />
-            {notifications.length > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
-                {Math.min(notifications.length, 9)}
-              </span>
-            )}
-          </button>
         </div>
-
-        {/* NOTIFICATIONS PANEL */}
-        {showNotifications && (
-          <div className="mb-6 rounded-[28px] border border-rose-100 bg-white/90 p-6 shadow">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="font-semibold text-slate-800">Thông báo</h2>
-              <button
-                onClick={() => setNotifications([])}
-                className="text-xs text-rose-500 hover:text-rose-600"
-              >
-                Xóa tất cả
-              </button>
-            </div>
-
-            {notifications.length === 0 ? (
-              <p className="text-center text-sm text-rose-400">Không có thông báo nào</p>
-            ) : (
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {notifications.map(notif => (
-                  <div
-                    key={notif.id}
-                    className="flex items-center justify-between rounded-lg border border-rose-100 bg-rose-50 p-3 text-sm text-slate-700"
-                  >
-                    <span>{notif.message}</span>
-                    <button
-                      onClick={() =>
-                        setNotifications(prev => prev.filter(n => n.id !== notif.id))
-                      }
-                      className="text-rose-400 hover:text-rose-600"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* CREATE POST */}
         <div className="mb-8 rounded-[28px] border border-rose-100 bg-white/90 p-6 shadow">

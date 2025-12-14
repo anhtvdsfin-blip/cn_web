@@ -102,6 +102,8 @@ app.use('/api', openingMoveRoutes);
 app.use('/api', conversationRoutes);
 app.use("/api", postRoutes);
 app.use("/api", notifRouter);  
+// Library routes
+app.use('/api/library', libraryRoutes);
 
 // Phục vụ tệp tĩnh từ dist
 app.use(express.static(path.join(__dirname, "../my-react-app/dist")));  // đổi "client" thành thư mục front-end của bạn
