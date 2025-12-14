@@ -1,22 +1,27 @@
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Heart, Bell, Menu, X } from "lucide-react";
-import { UserContext } from "../contexts";
+import { UserContext, SocketContext } from "../contexts";
+import NotificationPanel from "./NotificationPanel";
 
-export default function Navbar({ user: controlledUser, socket }) {
+export default function Navbar({ user: controlledUser, socket, unreadCount = 0 }) {
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const { user: contextUser, setUser: setUserContext } = useContext(UserContext) ?? {};
   const [user, setLocalUser] = useState(controlledUser ?? contextUser ?? null);
   const navigate = useNavigate();
   const location = useLocation();
 
-  const navItems = [
-    { label: "Find Love", path: "/feed" },
-    { label: "Match", path: "/chat" },
-    { label: "Messages", path: "/messenger" },
-    { label: "Study", path: "/home" },
-  ];
+  const navItems = useMemo(
+    () => [
+      { label: "Find Love", path: "/feed" },
+      { label: "Match", path: "/chat" },
+      { label: "Messages", path: "/messenger" },
+      { label: "Study", path: "/home" },
+    ],
+    []
+  );
 
   useEffect(() => {
     if (controlledUser !== undefined) {
@@ -135,14 +140,22 @@ export default function Navbar({ user: controlledUser, socket }) {
             <div className="flex items-center gap-3">
               <button
                 type="button"
+                onClick={() => setShowNotifications(!showNotifications)}
                 className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-rose-200 bg-white/80 text-rose-400 transition hover:border-rose-300 hover:text-rose-500"
                 aria-label="Thông báo"
               >
                 <Bell className="h-4 w-4" />
-                {Array.isArray(user.notifications) && user.notifications.some((n) => !n?.read) && (
-                  <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-teal-500" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
                 )}
               </button>
+
+              <NotificationPanel
+                isOpen={showNotifications}
+                onClose={() => setShowNotifications(false)}
+              />
 
               <div className="relative">
                 <button

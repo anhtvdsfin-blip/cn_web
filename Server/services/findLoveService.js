@@ -4,6 +4,7 @@ import Swipe from '../models/Swipe.js';
 import Match from '../models/Match.js';
 import matchingService from './MatchingService.js';
 import { buildUserResponse } from './UserService.js';
+import { notificationService } from './NotificationService.js';
 
 const MAX_CANDIDATE_POOL = 40;
 const DEFAULT_CARD_LIMIT = 10;
@@ -136,6 +137,35 @@ const fetchSwipedUserIds = async (userId) => {
   return swipes.map((id) => id.toString());
 };
 
+// 🔄 Fetch users that are matched with current user
+const fetchMatchedUserIds = async (userId) => {
+  const matches = await Match.find({
+    $or: [
+      { user1Id: userId },
+      { user2Id: userId }
+    ],
+    status: 'active'
+  }).select('user1Id user2Id');
+  
+  return matches.map(match => {
+    const matchedId = String(match.user1Id) === String(userId) ? match.user2Id : match.user1Id;
+    return matchedId.toString();
+  });
+};
+
+// ⏰ Fetch users disliked in last 24 hours (will be available again after 24h)
+const fetchRecentDislikesUserIds = async (userId) => {
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  
+  const dislikes = await Swipe.find({
+    swiperId: userId,
+    action: 'dislike',
+    createdAt: { $gte: oneDayAgo }
+  }).distinct('swipedId');
+  
+  return dislikes.map((id) => id.toString());
+};
+
 const buildCandidateQuery = (user, excludeIds, options = {}) => {
   const query = {
     _id: { $ne: user._id, $nin: excludeIds },
@@ -226,16 +256,20 @@ export const findLoveService = {
     await ensureMatchingReady();
 
     const normalizedCurrentUser = buildUserResponse(userDoc);
-    const swipedIds = await fetchSwipedUserIds(userId);
+    
+    // Exclude: matched users + recent left swipes (24h)
+    const matchedIds = await fetchMatchedUserIds(userId);
+    const recentDislikeIds = await fetchRecentDislikesUserIds(userId);
+    const excludeIds = [...new Set([...matchedIds, ...recentDislikeIds])];
 
-    let candidateQuery = buildCandidateQuery(userDoc, swipedIds, { strictProfile: true });
+    let candidateQuery = buildCandidateQuery(userDoc, excludeIds, { strictProfile: true });
     let rawCandidates = await User.find(candidateQuery)
       .sort({ updatedAt: -1 })
       .limit(Math.max(limit * 3, MAX_CANDIDATE_POOL))
       .exec();
 
     if (!rawCandidates.length) {
-      candidateQuery = buildCandidateQuery(userDoc, swipedIds, { strictProfile: false });
+      candidateQuery = buildCandidateQuery(userDoc, excludeIds, { strictProfile: false });
       rawCandidates = await User.find(candidateQuery)
         .sort({ updatedAt: -1 })
         .limit(Math.max(limit * 2, MAX_CANDIDATE_POOL))
@@ -319,10 +353,25 @@ export const findLoveService = {
     const compatibility = await buildMatchPayload(normalizedSwiper, normalizedTarget);
     const matchId = await createOrUpdateMatch(userId, targetUserId, compatibility);
 
+    // ============ CREATE MATCH NOTIFICATIONS ============
+    let notifications = null;
+    try {
+      notifications = await notificationService.createMatchNotifications(
+        userId,
+        targetUserId,
+        matchId
+      );
+      console.log(`✅ Match notifications created for match: ${matchId}`);
+    } catch (error) {
+      console.error('❌ Error creating match notifications:', error);
+      // Don't throw - notifications are secondary feature
+    }
+
     return {
       match: true,
       matchId,
       compatibility,
+      notifications
     };
   },
 };

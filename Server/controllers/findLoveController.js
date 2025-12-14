@@ -1,5 +1,6 @@
 import httpStatus from 'http-status';
 import { findLoveService } from '../services/findLoveService.js';
+import { emitMatchNotifications } from '../socket/notificationSocket.js';
 
 export const getSwipeDeck = async (req, res) => {
   try {
@@ -32,7 +33,15 @@ export const submitSwipe = async (req, res) => {
       });
     }
 
+    // Get io instance from req
+    const io = req.app.get('io');
+
     const result = await findLoveService.registerSwipe(userId, targetId, action);
+
+    // Emit notifications if match was created
+    if (result.match && result.notifications) {
+      emitMatchNotifications(io, userId, targetId, result.notifications);
+    }
 
     return res.status(httpStatus.OK).json({
       success: true,
@@ -44,3 +53,4 @@ export const submitSwipe = async (req, res) => {
     return res.status(status).json({ success: false, message });
   }
 };
+
