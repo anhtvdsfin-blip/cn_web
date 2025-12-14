@@ -13,6 +13,7 @@ import connectDB from "./config/db.js";
 import matchingService from "./services/MatchingService.js";  // NEW
 import conversationRoutes from './routes/conversationRoutes.js';
 import { initChatSocket } from './socket/chatSocket.js';
+import { initNotificationSocket } from './socket/notificationSocket.js';
 import postRoutes from './routes/postRoutes.js';
 import { notifRouter } from './routes/notificationRoutes.js';
 import userRoutes from './routes/userRoutes.js';
@@ -37,6 +38,9 @@ const io = new Server(httpServer, {
     credentials: true
   }
 });
+
+// Store io instance in app for controllers
+app.set('io', io);
 
 
 // Middleware
@@ -76,6 +80,15 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// API Routes
+app.use("/api/auth", authRoutes);
+app.use('/api/users', userRoutes);
+app.use("/api/match", matchRoutes);  // NEW
+app.use('/api/findlove', findLoveRoutes);
+app.use('/api', conversationRoutes);
+app.use("/api", postRoutes);
+app.use("/api", notifRouter);  
+
 // Phục vụ tệp tĩnh từ dist
 app.use(express.static(path.join(__dirname, "../my-react-app/dist")));  // đổi "client" thành thư mục front-end của bạn
 
@@ -98,18 +111,11 @@ connectDB();
   }
 })();
 
-// API Routes
-app.use("/api/auth", authRoutes);
-app.use('/api/users', userRoutes);
-app.use("/api/match", matchRoutes);  // NEW
-app.use('/api/findlove', findLoveRoutes);
-app.use('/api', conversationRoutes);
-app.use("/api", postRoutes);
-app.use("/api", notifRouter);  
 
 // Socket.IO logic
 initMatchSocket(io);
 initChatSocket(io);
+initNotificationSocket(io);
 
 // Health check
 app.get("/", (req, res) => {
