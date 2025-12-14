@@ -92,6 +92,8 @@ export default function OtherProfileCard({ profile }) {
     });
   };
   const isPrimaryPhoto = photoIndex === 0;
+  const detailOverlayVisibility = isPrimaryPhoto ? 'pointer-events-auto translate-y-0 opacity-100' : 'pointer-events-none translate-y-6 opacity-0';
+  const gradientVisibility = isPrimaryPhoto ? 'opacity-100' : 'opacity-0';
 
   const CollapsedCarousel = () => {
     if (photos.length === 0) {
@@ -138,8 +140,8 @@ export default function OtherProfileCard({ profile }) {
     <>
       <article className="relative mx-auto flex h-full min-h-[84vh] max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-[36px] border border-rose-100/70 bg-rose-100/5 shadow-[0_30px_80px_-60px_rgba(233,114,181,0.7)] aspect-[9/18]">
         <CollapsedCarousel />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-rose-950/75 via-rose-900/25 to-transparent" />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-rose-900/20 via-rose-900/5 to-transparent" />
+        <div className={`pointer-events-none absolute inset-0 bg-gradient-to-t from-rose-950/75 via-rose-900/25 to-transparent transition-opacity duration-300 ease-out ${gradientVisibility}`} />
+        <div className={`pointer-events-none absolute inset-0 bg-gradient-to-b from-rose-900/20 via-rose-900/5 to-transparent transition-opacity duration-300 ease-out ${gradientVisibility}`} />
 
         {photos.length > 1 && (
           <div className="absolute left-1/2 top-6 z-20 flex -translate-x-1/2 gap-2">
@@ -153,7 +155,7 @@ export default function OtherProfileCard({ profile }) {
         )}
 
         <div
-          className={`absolute inset-x-0 bottom-0 z-20 p-8 text-white transition-all duration-300 ease-out md:p-8 ${isPrimaryPhoto ? 'pointer-events-auto translate-y-0 opacity-100' : 'pointer-events-none translate-y-6 opacity-0'}`}
+          className={`absolute inset-x-0 bottom-0 z-20 p-8 text-white transition-all duration-300 ease-out md:p-8 ${detailOverlayVisibility}`}
         >
           <div className="flex flex-wrap items-baseline gap-3 text-[2.4rem] font-semibold tracking-tight leading-[1.05] md:text-[2.7rem]">
             <h2>{profile.name}</h2>

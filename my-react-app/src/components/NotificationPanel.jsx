@@ -1,0 +1,148 @@
+import { useContext, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { X } from 'lucide-react';
+import { SocketContext, UserContext } from '../contexts';
+import axios from 'axios';
+
+export default function NotificationPanel({ isOpen, onClose }) {
+  const navigate = useNavigate();
+  const { user } = useContext(UserContext) ?? {};
+  const { notifications, setNotifications, unreadCount, setUnreadCount } = useContext(SocketContext) ?? {};
+  const [loading, setLoading] = useState(false);
+  const API_URL = import.meta.env.VITE_API_URL;
+
+  const handleMarkAsRead = async (notificationId) => {
+    try {
+      const res = await axios.post(`${API_URL}/api/notifications/${notificationId}/read`);
+      if (res.data.success) {
+        // Update local state
+        setNotifications?.(prev =>
+          prev.map(n => n._id === notificationId ? { ...n, isRead: true } : n)
+        );
+        setUnreadCount?.(prev => Math.max(0, prev - 1));
+      }
+    } catch (error) {
+      console.error('❌ Error marking notification as read:', error);
+    }
+  };
+
+  const handleNotificationClick = (notification) => {
+    // Mark as read
+    if (!notification.isRead) {
+      handleMarkAsRead(notification._id);
+    }
+
+    // If match notification, navigate to conversation
+    if (notification.type === 'match' && notification.matchId) {
+      onClose?.();
+      navigate(`/messenger?matchId=${notification.matchId._id || notification.matchId}`);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <>
+      {/* Panel */}
+      <div className="fixed right-4 top-16 z-50 w-96 max-w-[calc(100vw-32px)] bg-white rounded-lg shadow-lg border border-slate-200">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 p-4">
+          <h3 className="font-semibold text-slate-900">Thông báo</h3>
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-slate-100 rounded-full transition"
+            aria-label="Đóng"
+          >
+            <X size={20} className="text-slate-500" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="max-h-96 overflow-y-auto">
+          {!notifications || notifications.length === 0 ? (
+            <div className="flex items-center justify-center py-12">
+              <p className="text-slate-500 text-sm">Không có thông báo</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {notifications.map(notif => (
+                <div
+                  key={notif._id}
+                  onClick={() => handleNotificationClick(notif)}
+                  className={`p-4 cursor-pointer transition ${
+                    !notif.isRead
+                      ? 'bg-blue-50 hover:bg-blue-100'
+                      : 'bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  {/* Match Notification */}
+                  {notif.type === 'match' && (
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl mt-1">💖</span>
+                      <div className="flex-1">
+                        <p className="text-slate-900 font-medium">
+                          {notif.content}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {formatTime(notif.createdAt)}
+                        </p>
+                      </div>
+                      {!notif.isRead && (
+                        <div className="h-2 w-2 rounded-full bg-teal-500 flex-shrink-0 mt-2" />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Other Notification Types */}
+                  {notif.type !== 'match' && (
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl mt-1">📬</span>
+                      <div className="flex-1">
+                        <p className="text-slate-900 font-medium">
+                          {notif.content}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {formatTime(notif.createdAt)}
+                        </p>
+                      </div>
+                      {!notif.isRead && (
+                        <div className="h-2 w-2 rounded-full bg-teal-500 flex-shrink-0 mt-2" />
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {notifications && notifications.length > 0 && (
+          <div className="border-t border-slate-100 p-3 text-center">
+            <button className="text-sm text-teal-500 font-medium hover:text-teal-600 transition">
+              Xem tất cả
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// Helper to format time
+function formatTime(date) {
+  if (!date) return '';
+  const d = new Date(date);
+  const now = new Date();
+  const diffMs = now - d;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'Vừa xong';
+  if (diffMins < 60) return `${diffMins}m`;
+  if (diffHours < 24) return `${diffHours}h`;
+  if (diffDays < 7) return `${diffDays}d`;
+
+  return d.toLocaleDateString('vi-VN');
+}
