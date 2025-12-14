@@ -8,9 +8,9 @@ import Profile from "./pages/Profile";
 import CompleteProfile from "./pages/CompleteProfile";
 import PhotoManagement from "./pages/PhotoManagement";
 import Messenger from "./pages/Messenger";
+import LibraryInvite from './pages/LibraryInvite';
 import { io } from "socket.io-client";
 import { useState, useEffect } from "react";
-import AIChatPage from "./pages/AIChatPage";
 import { SocketContext, UserContext } from "./contexts";
 import axios from "axios";
 
@@ -23,7 +23,6 @@ function App() {
   const [unreadCount, setUnreadCount] = useState(0);
   const API_URL = import.meta.env.VITE_API_URL;
 
-  // 🔹 Load user từ sessionStorage khi mount
   useEffect(() => {
     const storedUser = sessionStorage.getItem("user");
     if (storedUser) {
@@ -51,27 +50,24 @@ function App() {
     return () => window.removeEventListener("userChanged", handleUserChange);
   }, []);
 
-  // 🔹 Tạo socket KHI CÓ USER (dependency: user)
   useEffect(() => {
-    if (!user) return; // ✅ Chờ có user mới tạo socket
+    if (!user) return;
 
     console.log("🔌 Creating socket for user:", user.id);
     const newSocket = io(API_URL, { withCredentials: true });
 
     newSocket.on("connect", () => {
       console.log("✅ Socket connected:", newSocket.id);
-      console.log("👀 Emitting set_user with id:", user.id);
       newSocket.emit("set_user", { userId: user.id });
     });
 
     setSocket(newSocket);
 
-    // Cleanup khi user thay đổi hoặc component unmount
     return () => {
       console.log("🔌 Disconnecting socket");
       newSocket.disconnect();
     };
-  }, [user, API_URL]); // ✅ Dependency: user
+  }, [user, API_URL]);
 
   // 🔔 Fetch notifications on app load
   useEffect(() => {
@@ -126,6 +122,7 @@ function App() {
           <Route path="/profile/manage-photos" element={<PhotoManagement />} />
           <Route path="/chat" element={<BlankPage />} />
           <Route path="/messenger" element={<Messenger />} />
+          <Route path="/library-invite" element={<LibraryInvite />} />
           <Route path="/complete-profile" element={<CompleteProfile />} />
           <Route path="/ai-chat" element={<AIChatPage />} />
           <Route path="/home" element={<BlankPage />} />

@@ -12,6 +12,7 @@ import matchRoutes from "./routes/matchRoutes.js";  // NEW
 import connectDB from "./config/db.js";
 import matchingService from "./services/MatchingService.js";  // NEW
 import conversationRoutes from './routes/conversationRoutes.js';
+import libraryRoutes from './routes/libraryRoutes.js';
 import { initChatSocket } from './socket/chatSocket.js';
 import { initNotificationSocket } from './socket/notificationSocket.js';
 import postRoutes from './routes/postRoutes.js';

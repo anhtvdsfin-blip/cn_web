@@ -10,7 +10,8 @@ export default function Login() {
   const [message, setMessage] = useState("");
   const navigate = useNavigate();
   const API_URL = import.meta.env.VITE_API_URL;
-  const { setUser } = useContext(UserContext);
+  const ctx = useContext(UserContext);
+  const setUser = ctx?.setUser;
 
   const handleSubmit = async (e) => {
     console.log("🔥 handleSubmit BẮT ĐẦU");
