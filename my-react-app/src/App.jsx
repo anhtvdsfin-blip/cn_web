@@ -130,6 +130,7 @@ function App() {
           <Route path="/ai-chat" element={<AIChatPage />} />
           <Route path="/home" element={<BlankPage />} />
           <Route path="/onboarding/photo-upload" element={<PhotoManagement />} />
+          <Route path="/community" element={<Community />} />
         </Routes>
       </SocketContext.Provider>
     </UserContext.Provider>

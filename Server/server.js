@@ -20,6 +20,8 @@ import userRoutes from './routes/userRoutes.js';
 import findLoveRoutes from './routes/findLoveRoutes.js';
 import openingMoveRoutes from './routes/openingMoveRoutes.js';
 
+import { initPostSocket } from './socket/postSocket.js';
+
 dotenv.config();
 
 const app = express();
@@ -81,6 +83,16 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Attach io to app for routes to access
+app.use((req, res, next) => {
+  req.io = io;
+  // Add helper to emit notifications to specific user
+  req.emitNotification = (recipientId, data) => {
+    io.to(recipientId.toString()).emit('notification:new', data);
+  };
+  next();
+});
+
 // API Routes
 app.use("/api/auth", authRoutes);
 app.use('/api/users', userRoutes);
@@ -117,6 +129,7 @@ connectDB();
 // Socket.IO logic
 initMatchSocket(io);
 initChatSocket(io);
+initPostSocket(io);
 initNotificationSocket(io);
 
 // Health check
