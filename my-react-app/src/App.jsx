@@ -10,6 +10,7 @@ import PhotoManagement from "./pages/PhotoManagement";
 import OpeningMoveOnboarding from "./pages/OpeningMoveOnboarding";
 import Messenger from "./pages/Messenger";
 import LibraryInvite from './pages/LibraryInvite';
+import Community from "./pages/Community";
 import { io } from "socket.io-client";
 import { useState, useEffect } from "react";
 import { SocketContext, UserContext } from "./contexts";
@@ -125,7 +126,6 @@ function App() {
           <Route path="/messenger" element={<Messenger />} />
           <Route path="/library-invite" element={<LibraryInvite />} />
           <Route path="/complete-profile" element={<CompleteProfile />} />
-          <Route path="/ai-chat" element={<AIChatPage />} />
           <Route path="/home" element={<BlankPage />} />
           <Route path="/onboarding/photo-upload" element={<PhotoManagement />} />
           <Route path="/onboarding/opening-move" element={<OpeningMoveOnboarding onComplete={() => { window.location.href = '/feed'; }} />} />
