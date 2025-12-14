@@ -13,15 +13,12 @@ export default function Navbar({ user: controlledUser, socket, unreadCount = 0 }
   const navigate = useNavigate();
   const location = useLocation();
 
-  const navItems = useMemo(
-    () => [
-      { label: "Find Love", path: "/feed" },
-      { label: "Match", path: "/chat" },
-      { label: "Messages", path: "/messenger" },
-      { label: "Study", path: "/home" },
-    ],
-    []
-  );
+  const navItems = [
+    { label: "Find Love", path: "/feed" },
+    { label: "Match", path: "/chat" },
+    { label: "Messages", path: "/messenger" },
+    { label: "Library", path: "/library-invite" },
+  ];
 
   useEffect(() => {
     if (controlledUser !== undefined) {

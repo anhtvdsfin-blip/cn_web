@@ -27,6 +27,7 @@ export default function Home() {
   const [matchQueue, setMatchQueue] = useState([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [history, setHistory] = useState([]);
+  // const [matchQueue] = useState(SAMPLE_PROFILES);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showMenu, setShowMenu] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -220,11 +221,13 @@ export default function Home() {
   };
 
   const handleNextPhoto = () => {
+    const photos = activeProfile?.photos || [];
     if (photos.length <= 1) return;
     setPhotoIndex((prev) => (prev + 1) % photos.length);
   };
 
   const handlePrevPhoto = () => {
+    const photos = activeProfile?.photos || [];
     if (photos.length <= 1) return;
     setPhotoIndex((prev) => (prev - 1 + photos.length) % photos.length);
   };
@@ -243,16 +246,14 @@ export default function Home() {
 
   const handleBlockOrReport = async (type) => {
     if (!activeProfile || actionLoading) return;
-    const targetId = activeProfile.id; // ID của người bị chặn/báo cáo
-    const blockerId = storedUser?.id; // ID của người đang đăng nhập
+    const targetId = activeProfile.id;
+    const blockerId = storedUser?.id;
 
-    // 1. Kiểm tra ID người dùng
     if (!blockerId) {
         toast.error("Vui lòng đăng nhập để thực hiện hành động này.");
         return;
     }
     
-    // 2. Confirmation Modal cho hành động BLOCK
     if (type === 'block') {
         const confirmBlock = window.confirm(
             `Bạn có chắc chắn muốn CHẶN ${activeProfile.name} không? Bạn sẽ không bao giờ thấy hồ sơ này nữa.`
@@ -263,14 +264,12 @@ export default function Home() {
         }
     }
     
-    // Thiết lập Endpoint và Data
     const endpointPath = type === 'block' ? `block/${targetId}` : `report/${targetId}`;
     const apiUrl = `${API_URL}/api/users/${endpointPath}`;
     
-    // Controller Back-end sử dụng 'blockerId' hoặc 'reporterId' trong req.body
     const requestBody = {
-        blockerId: blockerId, // Dùng cho Block
-        reporterId: blockerId, // Dùng cho Report (route: /api/users/:userId/report)
+        blockerId: blockerId,
+        reporterId: blockerId,
         reason: type === 'report' ? prompt("Vui lòng cho biết lý do báo cáo (Không bắt buộc):") : undefined,
     };
 
@@ -289,10 +288,8 @@ export default function Home() {
             throw new Error(errorData.message || 'Yêu cầu thất bại từ Server');
         }
 
-        // Xử lý thành công
         const message = type === 'block' ? `Đã chặn ${activeProfile.name} thành công.` : `Đã gửi báo cáo về ${activeProfile.name}.`;
         
-        // ✨ HIỂN THỊ TOAST ✨
         toast.success(message); 
         
         setHistory((prev) => [{ profile: activeProfile, action: type }, ...prev.slice(0, 4)]);
@@ -301,13 +298,12 @@ export default function Home() {
     } catch (error) {
         console.error("API Error:", error);
         
-        // 🚨 TOAST LỖI 🚨
         toast.error(`Thao tác thất bại: ${error.message || 'Lỗi kết nối Server.'}`);
         
     } finally {
         setActionLoading(false);
     }
-};
+  };
   const statusMessage = useMemo(() => {
     if (isPending) {
       return 'Đang chuyển hồ sơ mới...';
