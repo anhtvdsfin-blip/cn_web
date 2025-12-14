@@ -13,10 +13,12 @@ import connectDB from "./config/db.js";
 import matchingService from "./services/MatchingService.js";  // NEW
 import conversationRoutes from './routes/conversationRoutes.js';
 import { initChatSocket } from './socket/chatSocket.js';
+import { initNotificationSocket } from './socket/notificationSocket.js';
 import postRoutes from './routes/postRoutes.js';
 import { notifRouter } from './routes/notificationRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import findLoveRoutes from './routes/findLoveRoutes.js';
+import openingMoveRoutes from './routes/openingMoveRoutes.js';
 
 import { initPostSocket } from './socket/postSocket.js';
 
@@ -39,6 +41,9 @@ const io = new Server(httpServer, {
     credentials: true
   }
 });
+
+// Store io instance in app for controllers
+app.set('io', io);
 
 
 // Middleware
@@ -93,6 +98,7 @@ app.use("/api/auth", authRoutes);
 app.use('/api/users', userRoutes);
 app.use("/api/match", matchRoutes);  // NEW
 app.use('/api/findlove', findLoveRoutes);
+app.use('/api', openingMoveRoutes);
 app.use('/api', conversationRoutes);
 app.use("/api", postRoutes);
 app.use("/api", notifRouter);  
@@ -124,6 +130,7 @@ connectDB();
 initMatchSocket(io);
 initChatSocket(io);
 initPostSocket(io);
+initNotificationSocket(io);
 
 // Health check
 app.get("/", (req, res) => {

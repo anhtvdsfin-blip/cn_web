@@ -4,6 +4,7 @@ import Swipe from '../models/Swipe.js';
 import Match from '../models/Match.js';
 import matchingService from './MatchingService.js';
 import { buildUserResponse } from './UserService.js';
+import { notificationService } from './NotificationService.js';
 
 const MAX_CANDIDATE_POOL = 40;
 const DEFAULT_CARD_LIMIT = 10;
@@ -136,6 +137,35 @@ const fetchSwipedUserIds = async (userId) => {
   return swipes.map((id) => id.toString());
 };
 
+// 🔄 Fetch users that are matched with current user
+const fetchMatchedUserIds = async (userId) => {
+  const matches = await Match.find({
+    $or: [
+      { user1Id: userId },
+      { user2Id: userId }
+    ],
+    status: 'active'
+  }).select('user1Id user2Id');
+  
+  return matches.map(match => {
+    const matchedId = String(match.user1Id) === String(userId) ? match.user2Id : match.user1Id;
+    return matchedId.toString();
+  });
+};
+
+// ⏰ Fetch users disliked in last 24 hours (will be available again after 24h)
+const fetchRecentDislikesUserIds = async (userId) => {
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  
+  const dislikes = await Swipe.find({
+    swiperId: userId,
+    action: 'dislike',
+    createdAt: { $gte: oneDayAgo }
+  }).distinct('swipedId');
+  
+  return dislikes.map((id) => id.toString());
+};
+
 const buildCandidateQuery = (user, excludeIds, options = {}) => {
   const query = {
     _id: { $ne: user._id, $nin: excludeIds },
@@ -209,9 +239,20 @@ const createOrUpdateMatch = async (userId, targetId, compatibility) => {
     return existing._id;
   }
 
+  // Fetch users' selected opening moves (may be null)
+  const [userA, userB] = await Promise.all([
+    User.findById(userId).select('selectedOpeningMove').lean(),
+    User.findById(targetId).select('selectedOpeningMove').lean(),
+  ]);
+
+  const openingMoveUser1 = userA ? (userA.selectedOpeningMove || null) : null;
+  const openingMoveUser2 = userB ? (userB.selectedOpeningMove || null) : null;
+
   const created = await Match.create({
     user1Id: userId,
     user2Id: targetId,
+    openingMoveUser1,
+    openingMoveUser2,
     ...matchUpdate,
   });
 
@@ -221,21 +262,90 @@ const createOrUpdateMatch = async (userId, targetId, compatibility) => {
 export const findLoveService = {
   async getSwipeDeck(userId, options = {}) {
     const limit = Number(options.limit) && Number(options.limit) > 0 ? Math.min(Number(options.limit), 30) : DEFAULT_CARD_LIMIT;
+    const filters = options.filters || {};
+    const debug = Boolean(options.debug);
 
     const userDoc = await ensureUserExists(userId);
     await ensureMatchingReady();
 
     const normalizedCurrentUser = buildUserResponse(userDoc);
-    const swipedIds = await fetchSwipedUserIds(userId);
+    
+    // Exclude: matched users + recent left swipes (24h)
+    const matchedIds = await fetchMatchedUserIds(userId);
+    const recentDislikeIds = await fetchRecentDislikesUserIds(userId);
+    const excludeIds = [...new Set([...matchedIds, ...recentDislikeIds])];
 
-    let candidateQuery = buildCandidateQuery(userDoc, swipedIds, { strictProfile: true });
-    let rawCandidates = await User.find(candidateQuery)
-      .sort({ updatedAt: -1 })
-      .limit(Math.max(limit * 3, MAX_CANDIDATE_POOL))
-      .exec();
+    let candidateQuery = buildCandidateQuery(userDoc, excludeIds, { strictProfile: true });
+
+    // Apply external filters (overrides user preferences where applicable)
+    // Age filter -> dob range
+    if (filters.ageRange && (Number.isFinite(filters.ageRange.min) || Number.isFinite(filters.ageRange.max))) {
+      const dobRange = computeDobRange(filters.ageRange);
+      if (dobRange) {
+        candidateQuery.dob = { $ne: null, $gte: dobRange.earliestDob, $lte: dobRange.latestDob };
+      }
+    }
+
+    // Height filter
+    if (filters.heightRange && (Number.isFinite(filters.heightRange.min) || Number.isFinite(filters.heightRange.max))) {
+      const hMin = Number.isFinite(filters.heightRange.min) ? Number(filters.heightRange.min) : 0;
+      const hMax = Number.isFinite(filters.heightRange.max) ? Number(filters.heightRange.max) : 999;
+      candidateQuery.height = { $gte: hMin, $lte: hMax };
+    }
+
+    // Cohort filter -> classYear variants (e.g. K60, 60)
+    if (filters.cohortRange && (Number.isFinite(filters.cohortRange.min) || Number.isFinite(filters.cohortRange.max))) {
+      const cMin = Number.isFinite(filters.cohortRange.min) ? Number(filters.cohortRange.min) : null;
+      const cMax = Number.isFinite(filters.cohortRange.max) ? Number(filters.cohortRange.max) : null;
+      if (cMin !== null && cMax !== null && cMax >= cMin) {
+        const values = [];
+        for (let y = cMin; y <= cMax; y += 1) {
+          values.push(`K${y}`);
+          values.push(String(y));
+        }
+        candidateQuery.classYear = { $in: values };
+      } else if (cMin !== null) {
+        candidateQuery.classYear = { $in: [`K${cMin}`, String(cMin)] };
+      }
+    }
+    // If distance filter is provided and we have a valid current user geoLocation, use $near
+    let rawCandidates;
+    const distanceKm = Number.isFinite(filters.distance) ? Number(filters.distance) : null;
+    const hasValidCoords = userDoc.geoLocation && Array.isArray(userDoc.geoLocation.coordinates)
+      && userDoc.geoLocation.coordinates.length === 2
+      && userDoc.geoLocation.coordinates.some((c) => Number.isFinite(c) && c !== 0);
+
+    if (distanceKm && hasValidCoords) {
+      const maxMeters = Math.max(0, Math.floor(distanceKm * 1000));
+      rawCandidates = await User.find({
+        ...candidateQuery,
+        geoLocation: {
+          $near: {
+            $geometry: userDoc.geoLocation,
+            $maxDistance: maxMeters,
+          },
+        },
+      })
+        .limit(Math.max(limit * 3, MAX_CANDIDATE_POOL))
+        .exec();
+    } else {
+      rawCandidates = await User.find(candidateQuery)
+        .sort({ updatedAt: -1 })
+        .limit(Math.max(limit * 3, MAX_CANDIDATE_POOL))
+        .exec();
+    }
+
+    // Debug logging
+    try {
+      console.debug('[findLoveService] filters:', JSON.stringify(filters));
+      console.debug('[findLoveService] candidateQuery keys:', Object.keys(candidateQuery));
+      console.debug('[findLoveService] rawCandidates.length:', rawCandidates.length);
+    } catch (e) {
+      // ignore logging errors
+    }
 
     if (!rawCandidates.length) {
-      candidateQuery = buildCandidateQuery(userDoc, swipedIds, { strictProfile: false });
+      candidateQuery = buildCandidateQuery(userDoc, excludeIds, { strictProfile: false });
       rawCandidates = await User.find(candidateQuery)
         .sort({ updatedAt: -1 })
         .limit(Math.max(limit * 2, MAX_CANDIDATE_POOL))
@@ -249,6 +359,34 @@ export const findLoveService = {
     const normalizedCandidates = rawCandidates
       .map((doc) => buildUserResponse(doc))
       .filter(Boolean);
+
+    if (debug) {
+      const sampleAges = normalizedCandidates.map((c) => c.age).slice(0, 50);
+      const dobFilter = candidateQuery.dob ? {
+        $gte: candidateQuery.dob.$gte ? candidateQuery.dob.$gte.toISOString() : undefined,
+        $lte: candidateQuery.dob.$lte ? candidateQuery.dob.$lte.toISOString() : undefined,
+      } : null;
+      const sampleDobs = rawCandidates.slice(0, 50).map((d) => d.dob ? new Date(d.dob).toISOString() : null);
+      return {
+        deck: [],
+        total: normalizedCandidates.length,
+        debug: {
+          filters,
+          rawCandidates: rawCandidates.length,
+          normalizedCandidates: normalizedCandidates.length,
+          sampleAges,
+          sampleDobs,
+          dobFilter,
+        },
+      };
+    }
+
+    // If raw option is set, return mapped candidate cards directly (skip matching/ranking)
+    if (options.raw) {
+      const mapped = normalizedCandidates.map((user) => mapCandidateToCard(user, null, normalizedCurrentUser));
+      const deck = mapped.slice(0, limit);
+      return { deck, total: deck.length };
+    }
 
     if (normalizedCandidates.length === 0) {
       return { deck: [], total: 0 };
@@ -319,10 +457,25 @@ export const findLoveService = {
     const compatibility = await buildMatchPayload(normalizedSwiper, normalizedTarget);
     const matchId = await createOrUpdateMatch(userId, targetUserId, compatibility);
 
+    // ============ CREATE MATCH NOTIFICATIONS ============
+    let notifications = null;
+    try {
+      notifications = await notificationService.createMatchNotifications(
+        userId,
+        targetUserId,
+        matchId
+      );
+      console.log(`✅ Match notifications created for match: ${matchId}`);
+    } catch (error) {
+      console.error('❌ Error creating match notifications:', error);
+      // Don't throw - notifications are secondary feature
+    }
+
     return {
       match: true,
       matchId,
       compatibility,
+      notifications
     };
   },
 };

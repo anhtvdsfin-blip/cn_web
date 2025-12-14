@@ -45,6 +45,12 @@ const notificationSchema = new mongoose.Schema({
     ref: 'Conversation'
   },
   
+  // Match ID reference
+  matchId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Match'
+  },
+  
   // Content preview
   content: String,
   

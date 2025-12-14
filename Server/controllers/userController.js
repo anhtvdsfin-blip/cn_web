@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import { getUserProfile, updateUserProfile } from '../services/UserService.js';
 import User from '../models/User.js';
 import Report from '../models/Report.js';
+import OpeningMove from '../models/OpeningMove.js';
 
 // POST /api/users/report/:targetId
 export const reportUser = async (req, res) => {
@@ -108,5 +109,32 @@ export const updateProfile = async (req, res) => {
         const status = error.statusCode || httpStatus.BAD_REQUEST;
         const message = error.message || 'Cập nhật profile thất bại.';
         res.status(status).send({ message });
+    }
+};
+
+export const setSelectedOpeningMove = async (req, res) => {
+    try {
+        const targetUserId = req.params.userId;
+        if (!targetUserId) return res.status(httpStatus.BAD_REQUEST).send({ success: false, message: 'Thiếu userId.' });
+
+        const { selectedOpeningMove } = req.body || {};
+
+        // If provided and not null, validate exists and active
+        if (selectedOpeningMove) {
+            const move = await OpeningMove.findById(selectedOpeningMove);
+            if (!move) return res.status(httpStatus.NOT_FOUND).send({ success: false, message: 'OpeningMove không tồn tại.' });
+            if (!move.isActive) return res.status(httpStatus.BAD_REQUEST).send({ success: false, message: 'OpeningMove hiện không khả dụng.' });
+        }
+
+        const user = await User.findById(targetUserId);
+        if (!user) return res.status(httpStatus.NOT_FOUND).send({ success: false, message: 'Người dùng không tồn tại.' });
+
+        user.selectedOpeningMove = selectedOpeningMove || null;
+        await user.save();
+
+        return res.status(httpStatus.OK).send({ success: true, message: 'Cập nhật Opening Move thành công.', user });
+    } catch (error) {
+        console.error('setSelectedOpeningMove error', error);
+        return res.status(httpStatus.INTERNAL_SERVER_ERROR).send({ success: false, message: 'Không thể cập nhật Opening Move.' });
     }
 };
