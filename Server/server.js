@@ -18,6 +18,7 @@ import postRoutes from './routes/postRoutes.js';
 import { notifRouter } from './routes/notificationRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import findLoveRoutes from './routes/findLoveRoutes.js';
+import openingMoveRoutes from './routes/openingMoveRoutes.js';
 
 dotenv.config();
 
@@ -85,6 +86,7 @@ app.use("/api/auth", authRoutes);
 app.use('/api/users', userRoutes);
 app.use("/api/match", matchRoutes);  // NEW
 app.use('/api/findlove', findLoveRoutes);
+app.use('/api', openingMoveRoutes);
 app.use('/api', conversationRoutes);
 app.use("/api", postRoutes);
 app.use("/api", notifRouter);  

@@ -55,6 +55,17 @@ const matchSchema = new mongoose.Schema({
   // Compatibility score
   compatibilityScore: Number,
   compatibilityBreakdown: Object,
+  // Selected opening moves at time of match (optional)
+  openingMoveUser1: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'OpeningMove',
+    default: null,
+  },
+  openingMoveUser2: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'OpeningMove',
+    default: null,
+  },
     
   // Metadata
   matchedAt: Date, // Khi cả 2 like
