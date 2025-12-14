@@ -5,9 +5,16 @@ import { emitMatchNotifications } from '../socket/notificationSocket.js';
 export const getSwipeDeck = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { limit } = req.query;
+    const { limit, distance, ageMin, ageMax, heightMin, heightMax } = req.query;
 
-    const result = await findLoveService.getSwipeDeck(userId, { limit });
+    const result = await findLoveService.getSwipeDeck(userId, { 
+      limit,
+      distance: distance ? Number(distance) : undefined,
+      ageMin: ageMin ? Number(ageMin) : undefined,
+      ageMax: ageMax ? Number(ageMax) : undefined,
+      heightMin: heightMin ? Number(heightMin) : undefined,
+      heightMax: heightMax ? Number(heightMax) : undefined
+    });
 
     return res.status(httpStatus.OK).json({
       success: true,

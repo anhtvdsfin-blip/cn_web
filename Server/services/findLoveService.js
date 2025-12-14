@@ -137,6 +137,13 @@ const fetchSwipedUserIds = async (userId) => {
   return swipes.map((id) => id.toString());
 };
 
+// Chỉ lấy những người đã Like (không lấy người đã X/nope/dislike)
+const fetchLikedUserIds = async (userId) => {
+  const swipes = await Swipe.find({ 
+    swiperId: userId, 
+    actionType: 'like'  // Sửa từ 'action' thành 'actionType'
+  }).distinct('swipedId');
+  return swipes.map((id) => id.toString());
 // 🔄 Fetch users that are matched with current user
 const fetchMatchedUserIds = async (userId) => {
   const matches = await Match.find({
@@ -251,12 +258,39 @@ const createOrUpdateMatch = async (userId, targetId, compatibility) => {
 export const findLoveService = {
   async getSwipeDeck(userId, options = {}) {
     const limit = Number(options.limit) && Number(options.limit) > 0 ? Math.min(Number(options.limit), 30) : DEFAULT_CARD_LIMIT;
+    const { distance, ageMin, ageMax, heightMin, heightMax } = options;
 
     const userDoc = await ensureUserExists(userId);
     await ensureMatchingReady();
 
     const normalizedCurrentUser = buildUserResponse(userDoc);
     
+    // Nếu có filter: chỉ loại những người đã Like, cho phép xem lại người đã X
+    // Nếu không có filter: loại tất cả người đã swipe (cả Like và X)
+    const hasFilters = distance !== undefined || ageMin !== undefined || ageMax !== undefined || heightMin !== undefined || heightMax !== undefined;
+    const swipedIds = hasFilters 
+      ? await fetchLikedUserIds(userId)  // Chỉ loại người đã Like
+      : await fetchSwipedUserIds(userId); // Loại tất cả đã swipe
+
+    let candidateQuery = buildCandidateQuery(userDoc, swipedIds, { strictProfile: true });
+    
+    // Apply age filter if provided (filter by dob - date of birth)
+    if (ageMin !== undefined || ageMax !== undefined) {
+      const now = new Date();
+      candidateQuery.dob = {};
+      
+      // ageMin = tuổi nhỏ nhất → người sinh TRƯỚC ngày X (dob <= maxBirthDate)
+      if (ageMin !== undefined) {
+        const maxBirthDate = new Date(now.getFullYear() - ageMin, now.getMonth(), now.getDate());
+        candidateQuery.dob.$lte = maxBirthDate;
+      }
+      
+      // ageMax = tuổi lớn nhất → người sinh SAU ngày X (dob >= minBirthDate)
+      if (ageMax !== undefined) {
+        const minBirthDate = new Date(now.getFullYear() - ageMax - 1, now.getMonth(), now.getDate());
+        candidateQuery.dob.$gte = minBirthDate;
+      }
+    }
     // Exclude: matched users + recent left swipes (24h)
     const matchedIds = await fetchMatchedUserIds(userId);
     const recentDislikeIds = await fetchRecentDislikesUserIds(userId);
@@ -269,6 +303,24 @@ export const findLoveService = {
       .exec();
 
     if (!rawCandidates.length) {
+      candidateQuery = buildCandidateQuery(userDoc, swipedIds, { strictProfile: false });
+      
+      // Re-apply age filter for fallback query (filter by dob)
+      if (ageMin !== undefined || ageMax !== undefined) {
+        const now = new Date();
+        candidateQuery.dob = {};
+        
+        if (ageMin !== undefined) {
+          const maxBirthDate = new Date(now.getFullYear() - ageMin, now.getMonth(), now.getDate());
+          candidateQuery.dob.$lte = maxBirthDate;
+        }
+        
+        if (ageMax !== undefined) {
+          const minBirthDate = new Date(now.getFullYear() - ageMax - 1, now.getMonth(), now.getDate());
+          candidateQuery.dob.$gte = minBirthDate;
+        }
+      }
+      
       candidateQuery = buildCandidateQuery(userDoc, excludeIds, { strictProfile: false });
       rawCandidates = await User.find(candidateQuery)
         .sort({ updatedAt: -1 })
@@ -280,9 +332,71 @@ export const findLoveService = {
       return { deck: [], total: 0 };
     }
 
-    const normalizedCandidates = rawCandidates
+    let normalizedCandidates = rawCandidates
       .map((doc) => buildUserResponse(doc))
       .filter(Boolean);
+
+    // Apply distance filter if provided
+    if (distance !== undefined) {
+      if (!normalizedCurrentUser.geoLocation) {
+        console.log(`[Distance Filter] ⚠️ Current user has no geoLocation, skipping distance filter`);
+      } else {
+        console.log(`[Distance Filter] Filtering by distance <= ${distance} km`);
+        normalizedCandidates = normalizedCandidates.filter(candidate => {
+          // Nếu candidate không có location, vẫn giữ lại (không loại bỏ)
+          if (!candidate.geoLocation) {
+            console.log(`[Distance Filter] ${candidate.name}: No geoLocation, keeping`);
+            return true;
+          }
+          
+          const dist = haversineDistanceKm(
+            normalizedCurrentUser.geoLocation,
+            candidate.geoLocation
+          );
+          
+          console.log(`[Distance Filter] ${candidate.name}: distance=${dist} km`);
+          
+          // Chỉ loại bỏ nếu có location VÀ vượt quá khoảng cách
+          if (dist === null) {
+            console.log(`[Distance Filter] ${candidate.name}: dist=null, keeping`);
+            return true;
+          }
+          if (dist <= distance) {
+            console.log(`[Distance Filter] ${candidate.name}: ${dist} <= ${distance}, keeping`);
+            return true;
+          }
+          console.log(`[Distance Filter] ${candidate.name}: ${dist} > ${distance}, REMOVING`);
+          return false;
+        });
+      }
+    }
+
+    // Apply height filter if provided
+    if (heightMin !== undefined || heightMax !== undefined) {
+      console.log(`[Height Filter] heightMin=${heightMin}, heightMax=${heightMax}`);
+      normalizedCandidates = normalizedCandidates.filter(candidate => {
+        const h = candidate.height;
+        console.log(`[Height Filter] Candidate ${candidate.name}: height=${h}, type=${typeof h}`);
+        
+        // Nếu candidate không có chiều cao, vẫn giữ lại (không loại bỏ)
+        if (h === null || h === undefined) {
+          console.log(`[Height Filter] ${candidate.name}: No height, keeping`);
+          return true;
+        }
+        
+        // Chỉ loại bỏ nếu có chiều cao VÀ ngoài khoảng cho phép
+        if (heightMin !== undefined && h < heightMin) {
+          console.log(`[Height Filter] ${candidate.name}: ${h} < ${heightMin}, REMOVING`);
+          return false;
+        }
+        if (heightMax !== undefined && h > heightMax) {
+          console.log(`[Height Filter] ${candidate.name}: ${h} > ${heightMax}, REMOVING`);
+          return false;
+        }
+        console.log(`[Height Filter] ${candidate.name}: ${h} in range, keeping`);
+        return true;
+      });
+    }
 
     if (normalizedCandidates.length === 0) {
       return { deck: [], total: 0 };

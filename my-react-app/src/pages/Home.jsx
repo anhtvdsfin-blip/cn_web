@@ -1,3 +1,6 @@
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import axios from 'axios';
+import { Heart, RotateCcw, X as XIcon, MessageCircle } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import { useDeferredValue, useEffect, useMemo, useState, useTransition } from 'react';
 import {
@@ -34,6 +37,29 @@ export default function Home() {
   const [deckError, setDeckError] = useState('');
   const [isProcessingAction, setIsProcessingAction] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [appliedFilters, setAppliedFilters] = useState({});
+
+  // State cho editing metrics trong sidebar
+  const [editingMetrics, setEditingMetrics] = useState({
+    distance: 3,
+    ageMin: 20,
+    ageMax: 25,
+    heightMin: 150,
+    heightMax: 190
+  });
+  const [isEditingDistance, setIsEditingDistance] = useState(false);
+  const [isEditingAge, setIsEditingAge] = useState(false);
+  const [isEditingHeight, setIsEditingHeight] = useState(false);
+
+  const activeProfile = matchQueue[activeIndex];
+  
+  const finderDistance = useMemo(() => {
+    if (appliedFilters.distance) {
+      return `${appliedFilters.distance} km`;
+    }
+    return storedUser?.preferences?.distance || storedUser?.preferredDistance || 'Trong 3km';
+  }, [appliedFilters.distance, storedUser?.preferences?.distance, storedUser?.preferredDistance]);
+
   const [isPending, startTransition] = useTransition();
 
   const activeProfile = matchQueue[activeIndex];
@@ -53,6 +79,11 @@ export default function Home() {
 
   const finderDistance = storedUser?.preferences?.distance || storedUser?.preferredDistance || 'Trong 3km';
   const finderAgeRange = useMemo(() => {
+    if (appliedFilters.ageRange?.min || appliedFilters.ageRange?.max) {
+      const min = appliedFilters.ageRange.min || 18;
+      const max = appliedFilters.ageRange.max || 50;
+      return `${min} - ${max} tuổi`;
+    }
     const preferred = storedUser?.preferredAgeRange;
     const agePreference = storedUser?.preferences?.ageRange;
     if (preferred) return preferred;
@@ -62,58 +93,62 @@ export default function Home() {
       return `${min} - ${max} tuổi`;
     }
     return '20 - 25 tuổi';
-  }, [storedUser?.preferredAgeRange, storedUser?.preferences?.ageRange]);
+  }, [appliedFilters.ageRange, storedUser?.preferredAgeRange, storedUser?.preferences?.ageRange]);
 
-  useEffect(() => {
-    if (!API_URL || !userId) {
-      return;
+  const finderHeightRange = useMemo(() => {
+    if (appliedFilters.heightRange?.min || appliedFilters.heightRange?.max) {
+      const min = appliedFilters.heightRange.min || 140;
+      const max = appliedFilters.heightRange.max || 200;
+      return `${min} - ${max} cm`;
     }
+    return '150 - 190 cm';
+  }, [appliedFilters.heightRange]);
 
-    const controller = new AbortController();
+  const fetchDeck = useCallback(async (filters = {}) => {
+    if (!API_URL || !userId) return;
 
-    const fetchDeck = async () => {
-      setIsLoadingDeck(true);
-      setDeckError('');
-      setActionError('');
+    setIsLoadingDeck(true);
+    setDeckError('');
+    setActionError('');
 
-      try {
-        const response = await fetch(`${API_URL}/api/findlove/${userId}/deck`, {
-          method: 'GET',
-          credentials: 'include',
-          signal: controller.signal,
-        });
+    try {
+      const params = new URLSearchParams();
+      if (filters.distance) params.append('distance', filters.distance);
+      if (filters.ageRange?.min) params.append('ageMin', filters.ageRange.min);
+      if (filters.ageRange?.max) params.append('ageMax', filters.ageRange.max);
+      if (filters.heightRange?.min) params.append('heightMin', filters.heightRange.min);
+      if (filters.heightRange?.max) params.append('heightMax', filters.heightRange.max);
 
-        if (!response.ok) {
-          const payload = await response.json().catch(() => null);
-          const message = payload?.message || 'Không thể tải dữ liệu tìm kiếm.';
-          throw new Error(message);
-        }
+      const url = `${API_URL}/api/findlove/${userId}/deck${params.toString() ? `?${params.toString()}` : ''}`;
 
-        const payload = await response.json();
-        const deck = Array.isArray(payload?.data) ? payload.data : [];
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+      });
 
-        setMatchQueue(deck);
-        setActiveIndex(0);
-        setHistory([]);
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        console.error('Fetch swipe deck failed:', error);
-        setDeckError(error.message || 'Không thể tải dữ liệu tìm kiếm.');
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsLoadingDeck(false);
-        }
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        const message = payload?.message || 'Không thể tải dữ liệu tìm kiếm.';
+        throw new Error(message);
       }
-    };
 
-    fetchDeck();
+      const payload = await response.json();
+      const deck = Array.isArray(payload?.data) ? payload.data : [];
 
-    return () => {
-      controller.abort();
-    };
+      setMatchQueue(deck);
+      setActiveIndex(0);
+      setHistory([]);
+    } catch (error) {
+      console.error('Fetch swipe deck failed:', error);
+      setDeckError(error.message || 'Không thể tải dữ liệu tìm kiếm.');
+    } finally {
+      setIsLoadingDeck(false);
+    }
   }, [API_URL, userId]);
 
   useEffect(() => {
+    fetchDeck(appliedFilters);
+  }, [fetchDeck]);
     setPhotoIndex(0);
     setShowMenu(false);
   }, [activeIndex]);
@@ -190,6 +225,51 @@ export default function Home() {
       setActionError('');
     }
   };
+
+  // Handler cho apply metrics từ sidebar
+  const handleApplyMetrics = useCallback(() => {
+    const filters = {
+      distance: editingMetrics.distance,
+      ageRange: {
+        min: editingMetrics.ageMin,
+        max: editingMetrics.ageMax
+      },
+      heightRange: {
+        min: editingMetrics.heightMin,
+        max: editingMetrics.heightMax
+      }
+    };
+    setAppliedFilters(filters);
+    setIsEditingDistance(false);
+    setIsEditingAge(false);
+    setIsEditingHeight(false);
+    fetchDeck(filters);
+  }, [editingMetrics, fetchDeck]);
+
+  // Handler mở chat với opening move
+  const handleOpeningMove = useCallback(async (message) => {
+    if (!activeProfile) return;
+
+    try {
+      await axios.post(
+        `${API_URL}/api/matches/opening-move`,
+        {
+          userId: storedUser._id || storedUser.id,
+          targetUserId: activeProfile._id || activeProfile.id,
+          message
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${sessionStorage.getItem('token')}`
+          }
+        }
+      );
+      alert('Đã gửi tin nhắn mở đầu! 💌');
+    } catch (error) {
+      console.error('Lỗi khi gửi opening move:', error);
+      alert('Có lỗi xảy ra, vui lòng thử lại!');
+    }
+  }, [activeProfile, API_URL, storedUser]);
 
   const handleNextPhoto = () => {
     if (photos.length <= 1) return;
@@ -326,6 +406,137 @@ export default function Home() {
             </p>
           </div>
 
+        <div className="mt-12 flex w-full flex-1 flex-col items-center justify-center">
+          <div className="flex w-full flex-col items-center gap-10 lg:flex-row lg:items-stretch lg:justify-between">
+            <aside className="hidden w-full max-w-[280px] flex-col gap-6 rounded-[28px] border border-rose-100/70 bg-white/80 p-6 text-sm text-rose-500 shadow-[0_18px_40px_-30px_rgba(188,144,255,0.6)] lg:flex">
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-[0.35em] text-rose-400/80">Search metrics</h3>
+                <div className="mt-5 space-y-4">
+                  {/* Khoảng cách - Inline editing */}
+                  <div className="rounded-[20px] border border-rose-100 bg-white px-4 py-3 text-xs">
+                    {isEditingDistance ? (
+                      <div className="space-y-2">
+                        <label className="block text-xs font-semibold text-rose-500/90">Khoảng cách: {editingMetrics.distance} km</label>
+                        <input
+                          type="range"
+                          min="1"
+                          max="20"
+                          value={editingMetrics.distance}
+                          onChange={(e) => setEditingMetrics(prev => ({ ...prev, distance: Number(e.target.value) }))}
+                          className="w-full accent-rose-500"
+                        />
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setIsEditingDistance(true)}
+                        className="flex w-full items-center justify-between text-slate-600 hover:text-rose-500"
+                      >
+                        <span className="font-semibold text-rose-500/90">Khoảng cách</span>
+                        <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">{finderDistance}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Độ tuổi - Inline editing */}
+                  <div className="rounded-[20px] border border-rose-100 bg-white px-4 py-3 text-xs">
+                    {isEditingAge ? (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-rose-500/90 mb-1">Tuổi min: {editingMetrics.ageMin}</label>
+                          <input
+                            type="range"
+                            min="18"
+                            max="50"
+                            value={editingMetrics.ageMin}
+                            onChange={(e) => setEditingMetrics(prev => ({ ...prev, ageMin: Number(e.target.value) }))}
+                            className="w-full accent-rose-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-rose-500/90 mb-1">Tuổi max: {editingMetrics.ageMax}</label>
+                          <input
+                            type="range"
+                            min="18"
+                            max="50"
+                            value={editingMetrics.ageMax}
+                            onChange={(e) => setEditingMetrics(prev => ({ ...prev, ageMax: Number(e.target.value) }))}
+                            className="w-full accent-rose-500"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setIsEditingAge(true)}
+                        className="flex w-full items-center justify-between text-slate-600 hover:text-rose-500"
+                      >
+                        <span className="font-semibold text-rose-500/90">Độ tuổi</span>
+                        <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">{finderAgeRange}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Chiều cao - Inline editing */}
+                  <div className="rounded-[20px] border border-rose-100 bg-white px-4 py-3 text-xs">
+                    {isEditingHeight ? (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-rose-500/90 mb-1">Chiều cao min: {editingMetrics.heightMin} cm</label>
+                          <input
+                            type="range"
+                            min="140"
+                            max="200"
+                            value={editingMetrics.heightMin}
+                            onChange={(e) => setEditingMetrics(prev => ({ ...prev, heightMin: Number(e.target.value) }))}
+                            className="w-full accent-rose-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-rose-500/90 mb-1">Chiều cao max: {editingMetrics.heightMax} cm</label>
+                          <input
+                            type="range"
+                            min="140"
+                            max="200"
+                            value={editingMetrics.heightMax}
+                            onChange={(e) => setEditingMetrics(prev => ({ ...prev, heightMax: Number(e.target.value) }))}
+                            className="w-full accent-rose-500"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setIsEditingHeight(true)}
+                        className="flex w-full items-center justify-between text-slate-600 hover:text-rose-500"
+                      >
+                        <span className="font-semibold text-rose-500/90">Chiều cao</span>
+                        <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">{finderHeightRange}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Nút áp dụng bộ lọc */}
+                  {(isEditingDistance || isEditingAge || isEditingHeight) && (
+                    <button
+                      onClick={handleApplyMetrics}
+                      className="w-full rounded-full bg-rose-500 px-4 py-2 text-xs font-semibold text-white transition hover:bg-rose-600"
+                    >
+                      Áp dụng bộ lọc
+                    </button>
+                  )}
+                </div>
+              </div>
+            </aside>
+
+            <div className="flex w-full max-w-md flex-col items-center gap-10">
+              <div className="relative w-full">
+                {isLoadingDeck ? (
+                  <div className="flex h-[82vh] flex-col items-center justify-center gap-4 rounded-[36px] border border-rose-100 bg-white/90 p-10 text-center shadow-[0_30px_80px_-60px_rgba(233,114,181,0.65)]">
+                    <div className="h-12 w-12 animate-spin rounded-full border-2 border-rose-200 border-t-rose-400" aria-hidden="true" />
+                    <p className="text-sm font-medium text-rose-500/90">Đang tìm những nhịp tim phù hợp cho bạn...</p>
+                  </div>
+                ) : deckError && !activeProfile ? (
+                  <div className="flex h-[82vh] flex-col items-center justify-center gap-4 rounded-[36px] border border-rose-100 bg-white/90 p-10 text-center shadow-[0_30px_80px_-60px_rgba(233,114,181,0.65)]">
+                    <div className="rounded-full bg-white/60 p-6 text-rose-400 shadow-inner">
+                      <Heart className="h-12 w-12" />
           <div className="mt-12 flex w-full flex-1">
             <div className="grid w-full flex-1 grid-cols-1 items-start gap-8 lg:grid-cols-[280px_minmax(0,1fr)_280px] lg:gap-10">
               <aside className="hidden w-full max-w-[280px] flex-col gap-6 rounded-[28px] border border-rose-100/70 bg-white/80 p-6 text-sm text-rose-500 shadow-[0_18px_40px_-30px_rgba(188,144,255,0.6)] lg:flex">
