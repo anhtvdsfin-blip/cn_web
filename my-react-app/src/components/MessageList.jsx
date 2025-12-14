@@ -9,7 +9,7 @@ const MessageListBase = ({ messages, isTyping, onScroll }, ref) => {
     <div
       ref={ref}
       onScroll={onScroll}
-      className="flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.7),_rgba(255,214,211,0.25)_58%,_transparent)] px-6 py-6"
+      className="flex-1 min-h-0 overflow-y-auto bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.7),_rgba(255,214,211,0.25)_58%,_transparent)] px-6 py-6"
     >
       {messages.length === 0 ? (
         <div className="flex h-full flex-col items-center justify-center text-rose-300">

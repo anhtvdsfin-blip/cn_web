@@ -37,7 +37,7 @@ const MessageItem = memo(function MessageItem({ message }) {
   const shouldAnimate = !!message.__isNewest && !!message.shouldAnimate;
 
   return (
-    <div className={`flex ${alignment} ${shouldAnimate ? 'animate-fadeIn' : ''}`}>
+    <div className={`flex ${alignment} ${shouldAnimate ? 'animate-fadeIn' : ''} [writing-mode:horizontal-tb] [transform:none]`}>
       <div className={`max-w-[78%] rounded-3xl px-4 py-3 text-sm shadow ${bubbleColor}`}>
         <p className="whitespace-pre-wrap break-words">{message.content}</p>
         <p className={`mt-2 text-[11px] font-medium ${message.isSelf ? 'text-white/70' : 'text-rose-300'}`}>
@@ -51,21 +51,54 @@ const MessageItem = memo(function MessageItem({ message }) {
 // ============================================
 // MESSAGE LIST (Memoized with forwardRef)
 // ============================================
-const MessageListBase = ({ messages, isTyping, onScroll }, ref) => {
+const MessageListBase = ({ messages, isTyping, onScroll, conversation, onUseOpeningMove }, ref) => {
   const newestIndex = messages.length - 1;
 
   return (
     <div
       ref={ref}
       onScroll={onScroll}
-      className="flex-1 overflow-y-auto bg-gradient-to-b from-white/50 to-white/30 px-6 py-6"
+      className="flex-1 overflow-y-auto bg-gradient-to-b from-white/50 to-white/30 px-6 py-6 [writing-mode:horizontal-tb] [transform:none]"
     >
       {messages.length === 0 ? (
-        <div className="flex h-full flex-col items-center justify-center text-rose-300">
-          <Heart className="mb-4 h-12 w-12" />
-          <p className="text-sm font-medium">Chưa có tin nhắn nào</p>
-          <p className="mt-1 text-xs">Hãy gửi lời chào để mở đầu câu chuyện ✨</p>
-        </div>
+        // If conversation has partnerOpeningMove, show it as the primary CTA.
+        conversation?.partnerOpeningMove ? (
+          <div className="px-6 py-4">
+            <div className="max-w-full">
+              <div className="rounded-2xl bg-teal-50 p-4 shadow-md">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-teal-300 to-teal-400 text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-5 w-5 text-rose-300">
+                      <path fill="currentColor" d="M12 21s-6.716-4.35-9.193-6.49C.923 11.987 3.06 7 6.5 7c1.925 0 3.02 1.06 3.5 2.02C10.48 8.06 11.575 7 13.5 7 16.94 7 19.077 11.987 21.193 14.51 18.716 16.65 12 21 12 21z"/>
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-slate-800">{conversation.partnerName} đã chọn câu hỏi mở đầu</p>
+                    <div className="mt-2 max-w-[90%] overflow-hidden rounded-lg bg-teal-100/90 p-3 text-sm text-slate-800">
+                      {conversation.partnerOpeningMove.text}
+                    </div>
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        onClick={() => onUseOpeningMove?.(conversation.partnerOpeningMove.text)}
+                        className="inline-flex items-center gap-2 rounded-full bg-teal-200 px-3 py-1 text-xs font-semibold text-slate-800"
+                      >
+                        Bấm để gửi ngay câu hỏi này
+                      </button>
+                    </div>
+                  </div>
+                  <div className="ml-3 text-rose-300">♡</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center text-rose-300">
+            <Heart className="mb-4 h-12 w-12" />
+            <p className="text-sm font-medium">Chưa có tin nhắn nào</p>
+            <p className="mt-1 text-xs">Hãy gửi lời chào để mở đầu câu chuyện ✨</p>
+          </div>
+        )
       ) : (
         <div className="space-y-4">
           {messages.map((message, index) => {
@@ -521,7 +554,7 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
             onBlock={handleBlock}
             actionLoading={actionLoading}
           />
-          <MessageList ref={messagesRef} messages={displayedMessages} isTyping={isTyping} onScroll={handleMessagesScroll} />
+          <MessageList ref={messagesRef} messages={displayedMessages} isTyping={isTyping} onScroll={handleMessagesScroll} conversation={selectedConversation} onUseOpeningMove={(text) => { setInputValue(text || ''); }} />
           <MessageInput
             value={inputValue}
             onChange={setInputValue}
@@ -659,8 +692,10 @@ function MessengerPage() {
           />
 
           {/* ========== RIGHT PANEL: CHAT (ChatPanel owns messages) ========== */}
-          <section className="flex h-full max-h-[calc(100vh-14rem)] flex-col overflow-hidden rounded-[32px] border border-white/60 bg-white/75 shadow-lg">
-            <ChatPanel API_URL={API_URL} socket={socket} user={user} selectedConversation={selectedConversation} selectedConversationId={selectedConversationId} setConversations={setConversations} />
+          <section className="flex h-full min-h-0 max-h-[calc(100vh-14rem)] flex-col overflow-hidden rounded-[32px] border border-white/60 bg-white/75 shadow-lg">
+            <div className="flex flex-1 flex-col overflow-hidden" >
+              <ChatPanel API_URL={API_URL} socket={socket} user={user} selectedConversation={selectedConversation} selectedConversationId={selectedConversationId} setConversations={setConversations} />
+            </div>
           </section>
         </div>
       </div>

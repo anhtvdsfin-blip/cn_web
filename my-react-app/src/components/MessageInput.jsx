@@ -54,7 +54,7 @@ const MessageInput = memo(function MessageInput({ value, onChange, onSend, onTyp
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder="Gửi lời yêu thương..."
+          placeholder="Nhập tin nhắn của bạn hoặc gửi Opening Move..."
           className="flex-1 bg-transparent text-sm text-slate-700 placeholder-rose-300 outline-none"
           autoFocus
         />
