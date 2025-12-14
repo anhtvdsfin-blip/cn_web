@@ -82,15 +82,15 @@ export default function Community() {
         )
       );
 
-      // Show notification if it's not my comment
-      if (commentUserId !== userId) {
-        setNotifications(prev => [{
-          id: Date.now(),
-          type: 'comment',
-          message: `${comment.userId?.name || 'Ai đó'} đã bình luận về bài viết của bạn`,
-          postId
-        }, ...prev]);
-      }
+    //   // Show notification if it's not my comment
+    //   if (commentUserId !== userId) {
+    //     setNotifications(prev => [{
+    //       id: Date.now(),
+    //       type: 'comment',
+    //       message: `${comment.userId?.name || 'Ai đó'} đã bình luận về bài viết của bạn`,
+    //       postId
+    //     }, ...prev]);
+    //   }
     });
 
     // New notification
