@@ -1,7 +1,8 @@
 import Post from '../models/Post.js';
+import User from '../models/User.js'; // ✅ THÊM IMPORT
 import { Comment } from '../models/Comment.js';
 import { createNotification } from '../models/Notification.js';
-import { io } from '../server.js'; // ⚠️ bạn phải export io ở server.js
+import { io } from '../server.js';
 
 // ==========================================
 // CREATE POST
@@ -43,20 +44,42 @@ export const createPost = async (req, res) => {
 };
 
 // ==========================================
-// GET FEED
+// GET FEED - ✅ FIXED WITH BLOCK FILTER
 // ==========================================
 export const getPosts = async (req, res) => {
   try {
     const { page = 1, limit = 10, userId } = req.query;
     const skip = (page - 1) * limit;
 
-    const posts = await Post.find({ isDeleted: false })
+    // ✅ LẤY DANH SÁCH NGƯỜI BỊ CHẶN
+    let blockedUserIds = [];
+    if (userId) {
+      const currentUser = await User.findById(userId).select('blockedUsers').lean();
+      blockedUserIds = currentUser?.blockedUsers || [];
+      
+      console.log(`📋 User ${userId} has blocked ${blockedUserIds.length} users:`, blockedUserIds);
+    }
+
+    // ✅ QUERY với filter người bị chặn
+    const query = {
+      isDeleted: false,
+      ...(blockedUserIds.length > 0 && {
+        userId: { $nin: blockedUserIds } // Loại bỏ posts của người bị chặn
+      })
+    };
+
+    console.log('🔍 Query filter:', JSON.stringify(query));
+
+    const posts = await Post.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .populate('userId', 'name avatar gender age hometown')
       .lean();
 
+    console.log(`✅ Found ${posts.length} posts after blocking filter`);
+
+    // ✅ Map kết quả với isLiked
     const result = posts.map(post => ({
       ...post,
       likeCount: post.likes?.length || 0,
@@ -65,7 +88,7 @@ export const getPosts = async (req, res) => {
         : false
     }));
 
-    const total = await Post.countDocuments({ isDeleted: false });
+    const total = await Post.countDocuments(query);
 
     res.json({
       success: true,
@@ -135,6 +158,49 @@ export const toggleLikePost = async (req, res) => {
 };
 
 // ==========================================
+// GET COMMENTS - ✅ ADDED WITH BLOCK FILTER
+// ==========================================
+export const getComments = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { userId } = req.query; // Người đang xem
+
+    // ✅ LẤY DANH SÁCH NGƯỜI BỊ CHẶN
+    let blockedUserIds = [];
+    if (userId) {
+      const currentUser = await User.findById(userId).select('blockedUsers').lean();
+      blockedUserIds = currentUser?.blockedUsers || [];
+    }
+
+    // ✅ QUERY với filter người bị chặn
+    const query = {
+      postId,
+      ...(blockedUserIds.length > 0 && {
+        userId: { $nin: blockedUserIds } // Loại comments của người bị chặn
+      })
+    };
+
+    const comments = await Comment.find(query)
+      .sort({ createdAt: 1 })
+      .populate('userId', 'name avatar')
+      .lean();
+
+    console.log(`✅ Found ${comments.length} comments (filtered ${blockedUserIds.length} blocked users)`);
+
+    res.json({
+      success: true,
+      comments
+    });
+  } catch (error) {
+    console.error('Get comments error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// ==========================================
 // CREATE COMMENT
 // ==========================================
 export const createComment = async (req, res) => {
@@ -191,7 +257,8 @@ export const createComment = async (req, res) => {
     // 🔴 REALTIME: comment mới
     io.emit('post:comment', {
       postId,
-      comment
+      comment,
+      userId // ✅ Thêm userId để client có thể filter
     });
 
     res.status(201).json({
@@ -233,6 +300,40 @@ export const deletePost = async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Delete post error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// ==========================================
+// DELETE COMMENT
+// ==========================================
+export const deleteComment = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { userId } = req.body;
+
+    const comment = await Comment.findById(commentId);
+    if (!comment) {
+      return res.status(404).json({ success: false, error: 'Comment not found' });
+    }
+
+    if (comment.userId.toString() !== userId) {
+      return res.status(403).json({ success: false, error: 'Unauthorized' });
+    }
+
+    await Comment.findByIdAndDelete(commentId);
+
+    // ✅ Giảm commentCount
+    await Post.findByIdAndUpdate(comment.postId, {
+      $inc: { commentCount: -1 }
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete comment error:', error);
     res.status(500).json({
       success: false,
       error: error.message

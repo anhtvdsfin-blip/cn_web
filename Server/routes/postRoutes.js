@@ -27,10 +27,8 @@ router.post('/posts', async (req, res) => {
       privacy: privacy || 'public'
     });
 
-    // Populate user info
     await post.populate('userId', 'name avatar');
 
-    // Emit socket event for real-time
     if (req.io) {
       req.io.emit('post:new', post);
     }
@@ -50,19 +48,40 @@ router.post('/posts', async (req, res) => {
 });
 
 // ==========================================
-// GET FEED (Tất cả posts)
+// GET FEED - ✅ FIXED WITH BLOCK FILTER
 // ==========================================
 router.get('/posts', async (req, res) => {
   try {
     const { page = 1, limit = 10, userId } = req.query;
     const skip = (page - 1) * limit;
 
-    const posts = await Post.find({ isDeleted: false })
+    // ✅ LẤY DANH SÁCH NGƯỜI BỊ CHẶN
+    let blockedUserIds = [];
+    if (userId) {
+      const currentUser = await User.findById(userId).select('blockedUsers').lean();
+      blockedUserIds = currentUser?.blockedUsers || [];
+      
+      console.log(`📋 User ${userId} has blocked ${blockedUserIds.length} users:`, blockedUserIds);
+    }
+
+    // ✅ QUERY với filter người bị chặn
+    const query = {
+      isDeleted: false,
+      ...(blockedUserIds.length > 0 && {
+        userId: { $nin: blockedUserIds }
+      })
+    };
+
+    console.log('🔍 Query filter:', JSON.stringify(query));
+
+    const posts = await Post.find(query)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .populate('userId', 'name avatar gender age hometown')
       .lean();
+
+    console.log(`✅ Found ${posts.length} posts after blocking filter`);
 
     // Add isLiked flag for current user
     const postsWithLikeStatus = posts.map(post => ({
@@ -71,7 +90,7 @@ router.get('/posts', async (req, res) => {
       isLiked: userId ? post.likes?.some(like => like.userId.toString() === userId) : false
     }));
 
-    const total = await Post.countDocuments({ isDeleted: false });
+    const total = await Post.countDocuments(query);
 
     res.json({
       success: true,
@@ -112,7 +131,6 @@ router.get('/posts/:postId', async (req, res) => {
       });
     }
 
-    // Add like status
     post.likeCount = post.likes ? post.likes.length : 0;
     post.isLiked = userId ? post.likes?.some(like => like.userId.toString() === userId) : false;
 
@@ -150,7 +168,6 @@ router.post('/posts/:postId/like', async (req, res) => {
     const result = await post.toggleLike(userId);
     await post.save();
 
-    // Emit socket event for real-time like update
     if (req.io) {
       req.io.emit('post:like', {
         postId,
@@ -160,7 +177,6 @@ router.post('/posts/:postId/like', async (req, res) => {
       });
     }
 
-    // Create notification if liked
     if (result.action === 'like') {
       const user = await User.findById(userId);
       await createNotification({
@@ -171,7 +187,6 @@ router.post('/posts/:postId/like', async (req, res) => {
         content: 'đã thích bài viết của bạn'
       });
 
-      // Emit notification socket event only to post owner
       if (req.emitNotification && post.userId.toString() !== userId) {
         req.emitNotification(post.userId.toString(), {
           type: 'like',
@@ -202,7 +217,7 @@ router.post('/posts/:postId/like', async (req, res) => {
 });
 
 // ==========================================
-// DELETE POST
+// DELETE POST - ✅ WITH REAL-TIME SOCKET
 // ==========================================
 router.delete('/posts/:postId', async (req, res) => {
   try {
@@ -218,7 +233,6 @@ router.delete('/posts/:postId', async (req, res) => {
       });
     }
 
-    // Check ownership
     if (post.userId.toString() !== userId) {
       return res.status(403).json({
         success: false,
@@ -228,6 +242,12 @@ router.delete('/posts/:postId', async (req, res) => {
 
     post.isDeleted = true;
     await post.save();
+
+    // ✅ EMIT SOCKET EVENT để tất cả users thấy real-time
+    if (req.io) {
+      req.io.emit('post:delete', postId);
+      console.log('🗑️ Socket emitted: post:delete', postId);
+    }
 
     res.json({
       success: true,
@@ -244,32 +264,52 @@ router.delete('/posts/:postId', async (req, res) => {
 });
 
 // ==========================================
-// GET COMMENTS
+// GET COMMENTS - ✅ FIXED WITH BLOCK FILTER
 // ==========================================
 router.get('/posts/:postId/comments', async (req, res) => {
   try {
     const { postId } = req.params;
-    const { page = 1, limit = 20 } = req.query;
+    const { page = 1, limit = 20, userId } = req.query;
     const skip = (page - 1) * limit;
 
-    const comments = await Comment.find({
+    // ✅ LẤY DANH SÁCH NGƯỜI BỊ CHẶN
+    let blockedUserIds = [];
+    if (userId) {
+      const currentUser = await User.findById(userId).select('blockedUsers').lean();
+      blockedUserIds = currentUser?.blockedUsers || [];
+      
+      console.log(`💬 User ${userId} has blocked ${blockedUserIds.length} users for comments`);
+    }
+
+    // ✅ QUERY với filter người bị chặn
+    const commentQuery = {
       postId,
       isDeleted: false,
-      parentCommentId: null // Chỉ lấy comment gốc, không lấy reply
-    })
+      parentCommentId: null,
+      ...(blockedUserIds.length > 0 && {
+        userId: { $nin: blockedUserIds }
+      })
+    };
+
+    const comments = await Comment.find(commentQuery)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .populate('userId', 'name avatar')
       .lean();
 
-    // Get replies for each comment
+    // Get replies for each comment (cũng filter blocked users)
     const commentsWithReplies = await Promise.all(
       comments.map(async (comment) => {
-        const replies = await Comment.find({
+        const replyQuery = {
           parentCommentId: comment._id,
-          isDeleted: false
-        })
+          isDeleted: false,
+          ...(blockedUserIds.length > 0 && {
+            userId: { $nin: blockedUserIds }
+          })
+        };
+
+        const replies = await Comment.find(replyQuery)
           .sort({ createdAt: 1 })
           .populate('userId', 'name avatar')
           .lean();
@@ -281,6 +321,8 @@ router.get('/posts/:postId/comments', async (req, res) => {
         };
       })
     );
+
+    console.log(`✅ Found ${commentsWithReplies.length} comments (filtered blocked users)`);
 
     res.json({
       success: true,
@@ -328,13 +370,11 @@ router.post('/posts/:postId/comments', async (req, res) => {
 
     await comment.populate('userId', 'name avatar');
 
-    // Update comment count
     if (!parentCommentId) {
       post.commentCount += 1;
       await post.save();
     }
 
-    // Emit socket event for real-time comment update
     if (req.io) {
       req.io.emit('post:comment', {
         postId,
@@ -345,10 +385,8 @@ router.post('/posts/:postId/comments', async (req, res) => {
       });
     }
 
-    // Create notification
     const user = await User.findById(userId);
     if (parentCommentId) {
-      // Reply to comment
       const parentComment = await Comment.findById(parentCommentId);
       if (parentComment) {
         await createNotification({
@@ -360,7 +398,6 @@ router.post('/posts/:postId/comments', async (req, res) => {
           content: 'đã trả lời bình luận của bạn'
         });
 
-        // Emit notification socket event only to reply target
         if (req.emitNotification && parentComment.userId.toString() !== userId) {
           req.emitNotification(parentComment.userId.toString(), {
             type: 'reply',
@@ -374,7 +411,6 @@ router.post('/posts/:postId/comments', async (req, res) => {
         }
       }
     } else {
-      // Comment on post
       await createNotification({
         recipientId: post.userId,
         senderId: userId,
@@ -384,7 +420,6 @@ router.post('/posts/:postId/comments', async (req, res) => {
         content: 'đã bình luận về bài viết của bạn'
       });
 
-      // Emit notification socket event only to post owner
       if (req.emitNotification && post.userId.toString() !== userId) {
         req.emitNotification(post.userId.toString(), {
           type: 'comment',
@@ -421,7 +456,7 @@ router.delete('/comments/:commentId', async (req, res) => {
     const { userId } = req.body;
 
     const comment = await Comment.findById(commentId);
-    
+
     if (!comment) {
       return res.status(404).json({
         success: false,
@@ -429,7 +464,6 @@ router.delete('/comments/:commentId', async (req, res) => {
       });
     }
 
-    // Check ownership
     if (comment.userId.toString() !== userId) {
       return res.status(403).json({
         success: false,
@@ -440,12 +474,27 @@ router.delete('/comments/:commentId', async (req, res) => {
     comment.isDeleted = true;
     await comment.save();
 
-    // Update post comment count
     if (!comment.parentCommentId) {
       await Post.findByIdAndUpdate(comment.postId, {
         $inc: { commentCount: -1 }
       });
     }
+
+    // ✅ EMIT SOCKET (QUAN TRỌNG)
+    if (req.io) {
+      req.io.emit('comment:delete', {
+        commentId,
+        postId: comment.postId,
+        deletedBy: userId
+      });
+
+      console.log('🗑️ Socket emitted: comment:delete', {
+        commentId,
+        postId: comment.postId,
+        deletedBy: userId
+      });
+    }
+
     res.json({
       success: true,
       message: 'Comment deleted successfully'
