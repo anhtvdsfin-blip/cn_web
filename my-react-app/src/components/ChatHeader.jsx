@@ -1,5 +1,8 @@
-import { memo, useCallback } from 'react';
-import { HeartHandshake, MoreHorizontal } from 'lucide-react';
+import { memo, useCallback, useEffect, useState } from 'react';
+import { MoreHorizontal } from 'lucide-react';
+import axios from 'axios';
+
+const API_URL = import.meta.env.VITE_API_URL;
 
 const ChatHeader = memo(function ChatHeader({ 
   conversation, 
@@ -10,6 +13,81 @@ const ChatHeader = memo(function ChatHeader({
   onBlock, 
   actionLoading 
 }) {
+  const [isCrush, setIsCrush] = useState(false);
+  const [isMutual, setIsMutual] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    // Determine crush state for this conversation if matchId exists
+    (async () => {
+      try {
+        const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+        const userId = user?.id || user?._id;
+        if (!userId || !conversation?.matchId) return;
+
+        const res = await axios.get(`${API_URL}/api/v1/user/my-crush?userId=${userId}`);
+        if (res.data?.success && res.data.match) {
+          const m = res.data.match;
+          const isMine = String(m._id) === String(conversation.matchId || conversation.matchId?._id);
+          setIsCrush(isMine);
+          setIsMutual(Boolean(m.isMutualCrush));
+        } else {
+          setIsCrush(false);
+          setIsMutual(false);
+        }
+      } catch (err) {
+        // ignore
+      }
+    })();
+  }, [conversation?.matchId]);
+
+  const handleSetCrush = async () => {
+    console.debug('handleSetCrush clicked', { conversation });
+    if (!conversation?.matchId) {
+      console.warn('No matchId on conversation, cannot set crush', conversation);
+      alert('Lỗi: cuộc trò chuyện này chưa có matchId.');
+      return;
+    }
+    const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+    const userId = user?.id || user?._id;
+    if (!userId) return alert('Vui lòng đăng nhập');
+
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_URL}/api/v1/matches/${conversation.matchId}/set-crush`, { userId });
+      if (res.data?.success) {
+        setIsCrush(true);
+        setIsMutual(Boolean(res.data.match?.isMutualCrush));
+      }
+    } catch (err) {
+      console.error('Set crush failed', err);
+    } finally { setLoading(false); }
+  };
+
+  const handleRemoveCrush = async () => {
+    console.debug('handleRemoveCrush clicked', { conversation });
+    if (!conversation?.matchId) {
+      console.warn('No matchId on conversation, cannot remove crush', conversation);
+      alert('Lỗi: cuộc trò chuyện này chưa có matchId.');
+      return;
+    }
+    if (!confirm('Bạn có chắc chắn muốn hủy Crush bí mật này?')) return;
+    const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+    const userId = user?.id || user?._id;
+    if (!userId) return alert('Vui lòng đăng nhập');
+
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_URL}/api/v1/matches/${conversation.matchId}/remove-crush`, { userId });
+      if (res.data?.success) {
+        setIsCrush(false);
+        setIsMutual(Boolean(res.data.match?.isMutualCrush));
+      }
+    } catch (err) {
+      console.error('Remove crush failed', err);
+    } finally { setLoading(false); }
+  };
+
   return (
     <header className="flex items-center justify-between rounded-t-[32px] border-b border-white/60 bg-white/70 px-6 py-4">
       <div className="flex items-center gap-3">
@@ -26,9 +104,15 @@ const ChatHeader = memo(function ChatHeader({
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <div className="hidden items-center gap-2 text-xs font-semibold text-rose-400 sm:flex">
-          <HeartHandshake className="h-4 w-4" />
-          <span>Kết nối an toàn</span>
+        <div className="items-center gap-2 flex">
+          <button
+            type="button"
+            onClick={() => { if (loading) return; if (isCrush) handleRemoveCrush(); else handleSetCrush(); }}
+            aria-label="Crush"
+            className={`inline-flex items-center justify-center px-3 py-2 rounded-full text-xs font-semibold transition ${isCrush ? 'bg-rose-500 text-white' : 'bg-white text-rose-500 border border-rose-100'} ${isMutual ? 'animate-pulse' : ''}`}
+          >
+            Crush
+          </button>
         </div>
         <div className="relative">
           <button

@@ -1,5 +1,6 @@
 import toast, { Toaster } from 'react-hot-toast';
 import { useDeferredValue, useEffect, useMemo, useState, useTransition } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   GraduationCap,
   Heart,
@@ -22,6 +23,8 @@ export default function Home() {
       return {};
     }
   }, []);
+
+  const navigate = useNavigate();
 
   const userId = storedUser?.id || storedUser?._id;
   const [matchQueue, setMatchQueue] = useState([]);
@@ -715,7 +718,10 @@ export default function Home() {
                   <p className="mt-3 text-xs leading-relaxed text-slate-600">
                     Khám phá ai đang bí mật crush bạn và gửi lời nhắn dễ thương chỉ trong 1 chạm.
                   </p>
-                  <button className="mt-4 w-full rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-xs font-semibold text-teal-600 transition hover:bg-teal-100">
+                  <button
+                    onClick={() => navigate('/your-crush')}
+                    className="mt-4 w-full rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-xs font-semibold text-teal-600 transition hover:bg-teal-100"
+                  >
                     Mở BK Crush
                   </button>
                 </div>

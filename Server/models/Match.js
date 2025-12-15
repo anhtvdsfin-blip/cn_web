@@ -88,6 +88,21 @@ const matchSchema = new mongoose.Schema({
   // Metadata
   matchedAt: Date, // Khi cả 2 like
   expiresAt: Date, // Hết hạn sau 3 phút
+  // Crush (BK Crush) statuses
+  isCrushStatusA: {
+    type: Boolean,
+    default: false
+  },
+  isCrushStatusB: {
+    type: Boolean,
+    default: false
+  },
+  crushAtA: Date,
+  crushAtB: Date,
+  isMutualCrush: {
+    type: Boolean,
+    default: false
+  },
   
   createdAt: {
     type: Date,
