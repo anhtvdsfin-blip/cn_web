@@ -13,6 +13,14 @@ export default function NotificationPanel({ isOpen, onClose }) {
 
   const handleMarkAsRead = async (notificationId) => {
     try {
+      // Some notifications are local-only (generated client-side) and use synthetic ids like 'm-<ts>'.
+      // These are not stored in the server DB so avoid calling backend for them.
+      if (typeof notificationId === 'string' && notificationId.startsWith('m-')) {
+        setNotifications?.(prev => prev.map(n => n._id === notificationId ? { ...n, isRead: true } : n));
+        setUnreadCount?.(prev => Math.max(0, prev - 1));
+        return { success: true, local: true };
+      }
+
       const res = await axios.post(`${API_URL}/api/notifications/${notificationId}/read`);
       if (res.data.success) {
         // Update local state
@@ -21,8 +29,37 @@ export default function NotificationPanel({ isOpen, onClose }) {
         );
         setUnreadCount?.(prev => Math.max(0, prev - 1));
       }
+      return res.data;
     } catch (error) {
       console.error('❌ Error marking notification as read:', error);
+      return { success: false, error };
+    }
+  };
+
+  const handleMarkAll = async () => {
+    if (!notifications || notifications.length === 0) return;
+    setLoading(true);
+    try {
+      const unread = (notifications || []).filter(n => !n.isRead);
+      if (unread.length === 0) return;
+
+      const serverUnread = unread.filter(n => !(typeof n._id === 'string' && n._id.startsWith('m-')));
+      const localOnly = unread.filter(n => (typeof n._id === 'string' && n._id.startsWith('m-')));
+
+      // Fire server requests in parallel for real notifications
+      if (serverUnread.length > 0) {
+        await Promise.allSettled(
+          serverUnread.map(n => axios.post(`${API_URL}/api/notifications/${n._id}/read`).catch(e => e))
+        );
+      }
+
+      // Mark local-only as read by updating state
+      setNotifications?.((prev) => prev.map(n => ({ ...n, isRead: true })));
+      setUnreadCount?.(0);
+    } catch (error) {
+      console.error('❌ Error marking all notifications as read:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -37,6 +74,17 @@ export default function NotificationPanel({ isOpen, onClose }) {
       onClose?.();
       navigate(`/messenger?matchId=${notification.matchId._id || notification.matchId}`);
       return;
+    }
+
+    // If message notification, navigate to the chat conversation
+    if (notification.type === 'message') {
+      const convId = notification.meta?.conversationId || notification.conversationId || notification.matchId;
+      if (convId) {
+        if (!notification.isRead) handleMarkAsRead(notification._id);
+        onClose?.();
+        navigate(`/messenger?matchId=${convId}`);
+        return;
+      }
     }
 
     // If library-related notification, navigate to library page and optionally to room
@@ -132,8 +180,12 @@ export default function NotificationPanel({ isOpen, onClose }) {
         {/* Footer */}
         {notifications && notifications.length > 0 && (
           <div className="border-t border-slate-100 p-3 text-center">
-            <button className="text-sm text-teal-500 font-medium hover:text-teal-600 transition">
-              Xem tất cả
+            <button
+              onClick={handleMarkAll}
+              disabled={loading}
+              className="text-sm text-teal-500 font-medium hover:text-teal-600 transition disabled:opacity-50"
+            >
+              {loading ? 'Đang đánh dấu...' : 'Xem tất cả'}
             </button>
           </div>
         )}

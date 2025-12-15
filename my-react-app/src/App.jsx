@@ -63,16 +63,21 @@ function App() {
     newSocket.on("connect", () => {
       console.log("✅ Socket connected:", newSocket.id);
       newSocket.emit("set_user", { userId: user.id });
-      // Ensure user joins legacy post socket room and notification socket room
+      // Also emit server-expected auth/join events so user is in both rooms
       try {
-        newSocket.emit('user:join', user.id);
+        newSocket.emit('user:join', user.id); // postSocket
       } catch (e) {
         console.warn('user:join emit failed', e);
       }
       try {
-        newSocket.emit('auth_notification', { userId: user.id });
+        newSocket.emit('auth_user', { userId: user.id }); // chatSocket expects this
       } catch (e) {
-        console.warn('auth_notification emit failed', e);
+        console.warn('auth_user emit failed', e);
+      }
+      try {
+        newSocket.emit('join_conversations', user.id); // ensure join of user_<id> room for chat messages
+      } catch (e) {
+        console.warn('join_conversations emit failed', e);
       }
     });
 
@@ -119,10 +124,48 @@ function App() {
 
     socket.on("new_notification", handleNewNotification);
 
+    // Also listen for new chat messages and push them into notifications
+    const handleNewMessageForNotif = (payload) => {
+      console.debug('socket new_message received at App:', payload);
+      try {
+        // payload may be { conversationId, message } or { message }
+        const message = payload?.message || payload;
+        if (!message) return;
+
+        // Ignore messages sent by ourselves to avoid self-notifications
+        if (user?.id && (String(message.senderId) === String(user.id))) {
+          return;
+        }
+
+        const senderName = message.senderName || message.sender?.name || message.fromName || message.from?.name || 'Ai đó';
+        const preview = (message.content || '').slice(0, 120);
+
+        const notif = {
+          _id: `m-${Date.now()}`,
+          type: 'message',
+          content: `${senderName}: ${preview}`,
+          createdAt: new Date().toISOString(),
+          isRead: false,
+          // attach reference so click can navigate later
+          meta: {
+            conversationId: payload.conversationId || message.conversationId || message.chatRoomId
+          }
+        };
+
+        setNotifications(prev => [notif, ...prev]);
+        setUnreadCount(prev => prev + 1);
+      } catch (e) {
+        console.error('Error handling new_message for notif', e);
+      }
+    };
+
+    socket.on('new_message', handleNewMessageForNotif);
+
     return () => {
       socket.off("new_notification", handleNewNotification);
+      socket.off('new_message', handleNewMessageForNotif);
     };
-  }, [socket]);
+  }, [socket, user?.id]);
 
   return (
     <UserContext.Provider value={{ user, setUser }}>

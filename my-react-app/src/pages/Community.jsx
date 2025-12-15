@@ -546,23 +546,23 @@ const createComment = async (postId) => {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-[#fff5f8]">
-      <div className="mx-auto max-w-2xl px-4 pt-24 pb-16">
+	return (
+		<div className="min-h-screen bg-gradient-to-br from-[#fff4f6] via-[#fff8fb] to-[#fffaf6]">
+			<div className="mx-auto max-w-2xl px-4 pt-28 pb-16">
         {/* HEADER */}
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-rose-600">Community</h1>
         </div>
 
         {/* CREATE POST */}
-        <div className="mb-8 rounded-[28px] border border-rose-100 bg-white/90 p-6 shadow">
-          <textarea
-            value={content}
-            onChange={e => setContent(e.target.value)}
-            placeholder="Bạn đang nghĩ gì?"
-            className="w-full resize-none rounded-xl border border-rose-100 p-4 text-sm focus:outline-none focus:ring-2 focus:ring-rose-200"
-            rows={3}
-          />
+				<div className="mb-8 rounded-3xl border border-rose-50 bg-white/80 p-6 shadow-xl backdrop-blur-sm">
+					<textarea
+						value={content}
+						onChange={e => setContent(e.target.value)}
+						placeholder="Bạn đang nghĩ gì?"
+						className="w-full resize-none rounded-2xl border border-rose-100 bg-white/60 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-200 placeholder:italic placeholder:text-rose-200"
+						rows={3}
+					/>
           
           {/* ✅ HIỂN THỊ VÀ XÓA ẢNH PREVIEW */}
           {previewImage && (
@@ -582,15 +582,15 @@ const createComment = async (postId) => {
             </div>
           )}
 
-          <div className="mt-4 flex justify-between items-center">
+		  <div className="mt-4 flex justify-between items-center">
             {/* ✅ NÚT CHỌN ẢNH (Dùng label cho input hidden) */}
-            <label 
-              htmlFor="post-image-upload" 
-              className="flex items-center gap-2 rounded-full text-sm font-semibold text-rose-500 cursor-pointer px-3 py-1 hover:bg-rose-50 transition"
-            >
-              <Image className="h-4 w-4" />
-              Thêm ảnh
-            </label>
+						<label
+							htmlFor="post-image-upload"
+							className="flex items-center gap-2 rounded-full text-sm font-semibold text-[#F08A74] cursor-pointer px-3 py-1 hover:bg-rose-50 transition"
+						>
+							<Image className="h-4 w-4" />
+							Thêm ảnh
+						</label>
             <input
               id="post-image-upload"
               type="file"
@@ -600,14 +600,13 @@ const createComment = async (postId) => {
               disabled={submitting}
             />
 
-            <button
-              onClick={createPost}
-              // Vô hiệu hóa nếu đang gửi hoặc không có content và không có ảnh
-              disabled={submitting || (!content.trim() && !selectedImage)}
-              className="flex items-center gap-2 rounded-full bg-rose-500 px-5 py-2 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-60"
-            >
-              <Send className="h-4 w-4" /> Đăng bài
-            </button>
+						<button
+							onClick={createPost}
+							disabled={submitting || (!content.trim() && !selectedImage)}
+							className="flex items-center gap-2 rounded-full bg-gradient-to-br from-[#F7C6B7] to-rose-400 px-5 py-2 text-sm font-semibold text-white shadow-lg hover:scale-105 disabled:opacity-60 transition-transform"
+						>
+							<Send className="h-4 w-4" /> Đăng bài
+						</button>
           </div>
         </div>
 
@@ -617,7 +616,7 @@ const createComment = async (postId) => {
         ) : posts.length === 0 ? (
           <p className="text-center text-rose-400">Chưa có bài viết nào</p>
         ) : (
-          <div className="space-y-6">
+					<div className="space-y-8">
             {posts.map(post => {
               // ✅ Lấy ID người đăng bài một cách an toàn
               const postAuthorId = (post.userId?._id || post.userId?.id || post.userId)?.toString();
@@ -629,26 +628,33 @@ const createComment = async (postId) => {
                 ? post.images[0].url || post.images[0] 
                 : null;
               
-              return (
-                <div
-                  key={post._id}
-                  className="rounded-[28px] border border-rose-100 bg-white/90 p-6 shadow"
-                >
+								return (
+									<div
+										key={post._id}
+										className="rounded-3xl border border-rose-50 bg-white/80 p-6 shadow-xl"
+									>
                   {/* POST HEADER */}
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-gradient-to-br from-rose-200 to-pink-200 flex items-center justify-center text-sm font-semibold text-rose-600">
-                        {post.userId?.name?.charAt(0) || '?'}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-800">
-                          {post.userId?.name || 'Ẩn danh'}
-                        </p>
-                        <p className="text-xs text-slate-400">
-                          {new Date(post.createdAt).toLocaleString('vi-VN')}
-                        </p>
-                      </div>
-                    </div>
+										<div className="flex items-center gap-3">
+											{post.userId?.avatar || post.userId?.photo ? (
+												<img src={post.userId.avatar || post.userId.photo} alt={post.userId?.name} className="h-10 w-10 rounded-full object-cover border-2 border-rose-50" />
+											) : (
+												<div className="h-10 w-10 rounded-full bg-gradient-to-br from-rose-200 to-pink-200 flex items-center justify-center text-sm font-semibold text-rose-600">
+													{post.userId?.name?.charAt(0) || '?'}
+												</div>
+											)}
+											<div>
+												<p className="text-sm font-semibold text-slate-800 flex items-center gap-2">
+													<span>{post.userId?.name || 'Ẩn danh'}</span>
+													{(post.userId?.major || post.userId?.kclass) && (
+														<span className="ml-2 rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-600">{post.userId?.major || post.userId?.kclass}</span>
+													)}
+												</p>
+												<p className="text-xs text-slate-400">
+													{new Date(post.createdAt).toLocaleString('vi-VN')}
+												</p>
+											</div>
+										</div>
                       
                     {/* BLOCK/REPORT MENU hoặc DELETE BUTTON */}
                     {!isOwnPost ? (
@@ -694,54 +700,48 @@ const createComment = async (postId) => {
                   </div>
 
                   {/* POST CONTENT */}
-                  <p className="mt-4 text-sm leading-relaxed text-slate-700 whitespace-pre-wrap">
+									<p className="mt-4 text-sm leading-relaxed text-slate-700 whitespace-pre-wrap">
                     {post.content}
                   </p>
 					
                   {/* ✅ HIỂN THỊ ẢNH ĐÍNH KÈM */}
                   {postImageUrl && (
-                    <div className="mt-4">
-                      <img 
-                        src={postImageUrl}
-                        alt="Bài đăng có ảnh" 
-                        className="w-full rounded-xl object-cover max-h-96"
-                      />
-                    </div>
+										<div className="mt-4">
+											<img
+												src={postImageUrl}
+												alt="Bài đăng có ảnh"
+												className="w-full rounded-xl object-cover max-h-96"
+											/>
+										</div>
                   )}
 
-                  {/* INTERACTIONS */}
-                  <div className="mt-5 flex items-center gap-6 text-rose-400">
-                    <button
-                      onClick={() => toggleLike(post._id)}
-                      className="flex items-center gap-2 hover:text-rose-500 transition"
-                    >
-                      <Heart
-                        className={`h-5 w-5 transition ${
-                          post.isLiked
-                            ? 'fill-rose-500 text-rose-500'
-                            : ''
-                        }`}
-                      />
-                      <span className="text-sm">{post.likeCount || 0}</span>
-                    </button>
+									{/* INTERACTIONS */}
+									<div className="mt-5 flex items-center gap-6 text-slate-600">
+										<button
+											onClick={() => toggleLike(post._id)}
+											className={`flex items-center gap-2 transition ${post.isLiked ? 'text-rose-500' : 'hover:text-rose-500'}`}
+										>
+											<Heart className="h-5 w-5" />
+											<span className={`text-sm ${post.isLiked ? 'text-rose-500' : ''}`}>{post.likeCount || 0}</span>
+										</button>
 
-                    <button
-                      onClick={() => {
-                        const newExpanded = !expandedComments[post._id];
-                        setExpandedComments(prev => ({
-                          ...prev,
-                          [post._id]: newExpanded
-                        }));
-                        if (newExpanded && !post.comments) {
-                          fetchComments(post._id);
-                        }
-                      }}
-                      className="flex items-center gap-2 hover:text-rose-500 transition"
-                    >
-                      <MessageCircle className="h-5 w-5" />
-                      <span className="text-sm">{post.commentCount || 0}</span>
-                    </button>
-                  </div>
+										<button
+											onClick={() => {
+												const newExpanded = !expandedComments[post._id];
+												setExpandedComments(prev => ({
+													...prev,
+													[post._id]: newExpanded
+												}));
+												if (newExpanded && !post.comments) {
+													fetchComments(post._id);
+												}
+											}}
+											className="flex items-center gap-2 hover:text-rose-500 transition"
+										>
+											<MessageCircle className="h-5 w-5" />
+											<span className="text-sm">{post.commentCount || 0}</span>
+										</button>
+									</div>
 
                   {/* COMMENTS SECTION */}
                   {expandedComments[post._id] && (
@@ -778,35 +778,50 @@ const createComment = async (postId) => {
                       <div className="space-y-3">
                         {loadingComments[post._id] ? (
                           <p className="text-center text-xs text-rose-400">Đang tải bình luận...</p>
-                        ) : post.comments && post.comments.length > 0 ? (
-                          post.comments.map(comment => (
-                            <div
-                              key={comment._id}
-                              className="rounded-lg border border-100 bg-rose-50 p-3"
-                            >
-                              <div className="flex items-start justify-between">
-                                <div>
-                                  <p className="text-xs font-semibold text-slate-800">
-                                    {comment.userId?.name || 'Ẩn danh'}
-                                  </p>
-                                  <p className="mt-1 text-xs leading-relaxed text-slate-700">
-                                    {comment.content}
-                                  </p>
-                                  <p className="mt-1 text-xs text-slate-400">
-                                    {new Date(comment.createdAt).toLocaleString('vi-VN')}
-                                  </p>
-                                </div>
-                                {comment.userId?._id === userId && (
-                                  <button
-                                    onClick={() => deleteComment(comment._id, post._id)}
-                                    className="text-slate-400 hover:text-red-500"
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          ))
+								) : post.comments && post.comments.length > 0 ? (
+									post.comments.map(comment => (
+										<div
+											key={comment._id}
+											className="rounded-lg border border-100 bg-rose-50 p-3"
+										>
+											<div className="flex items-start justify-between">
+												<div className="flex items-start gap-3">
+													<div className="flex-shrink-0">
+														{(comment.userId?.avatar || comment.userId?.photo) ? (
+															<img
+																src={comment.userId?.avatar || comment.userId?.photo}
+																alt={comment.userId?.name || 'Avatar'}
+																className="h-8 w-8 rounded-full object-cover"
+															/>
+														) : (
+															<div className="h-8 w-8 rounded-full bg-rose-200 flex items-center justify-center text-xs font-semibold text-rose-700">
+																{((comment.userId?.name || 'Ẩn').split(' ').map(n => n[0]).join('').slice(0,2)).toUpperCase()}
+															</div>
+														)}
+													</div>
+													<div>
+														<p className="text-xs font-semibold text-slate-800">
+															{comment.userId?.name || 'Ẩn danh'}
+														</p>
+														<p className="mt-1 text-xs leading-relaxed text-slate-700">
+															{comment.content}
+														</p>
+														<p className="mt-1 text-xs text-slate-400">
+															{new Date(comment.createdAt).toLocaleString('vi-VN')}
+														</p>
+													</div>
+												</div>
+												{comment.userId?._id === userId && (
+													<button
+														onClick={() => deleteComment(comment._id, post._id)}
+														className="text-slate-400 hover:text-red-500"
+													>
+														<Trash2 className="h-3 w-3" />
+													</button>
+												)}
+											</div>
+										</div>
+									))
                         ) : (
                           <p className="text-center text-xs text-rose-400">Chưa có bình luận nào</p>
                         )}

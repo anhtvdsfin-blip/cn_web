@@ -1,7 +1,3 @@
-//chátocket
-
-
-
 // ============================================
 // socket/chatSocket.js - Real-time Chat System
 // ============================================
@@ -9,8 +5,8 @@
 import matchingService from '../services/MatchingService.js';
 import Match from '../models/Match.js';
 import TemporaryChat from '../models/TemporaryChat.js';
-import Conversation from '../models/Conversation.js';
 import Message from '../models/Message.js';
+import User from '../models/User.js';
 
 export const initChatSocket = (io) => {
   const waitingQueue = [];
@@ -20,9 +16,26 @@ export const initChatSocket = (io) => {
   io.on("connection", (socket) => {
     console.log(`✅ User connected: ${socket.id}`);
 
+
+// ==========================================
+// AUTH USER (fix userId undefined)
+// ==========================================
+socket.on("auth_user", ({ userId }) => {
+  if (!userId) {
+    console.log("❌ auth_user received empty userId");
+    return;
+  }
+
+  socket.data.userId = userId.toString();
+  socket.join(`user_${userId}`);
+  console.log(`🔐 Authenticated user: ${socket.data.userId}`);
+});
+
     // ==========================================
     // 1. TÌM PARTNER
     // ==========================================
+
+
     socket.on("find_partner", async (userData) => {
       try {
         console.log(`🔍 ${userData.name} đang tìm partner...`);
@@ -271,67 +284,47 @@ export const initChatSocket = (io) => {
           io.to(chatRoom.partnerSocketId).emit("partner_liked_you");
         }
 
-        // ✅ Nếu cả hai cùng like → tạo hoặc dùng lại conversation
+        // ✅ Nếu cả hai cùng like → mark matched and move temp messages into Message collection
         if (updatedMatch.user1Liked && updatedMatch.user2Liked) {
-          // mark matched and set matchedAt atomically later after conversation created
+          const matchIdForChat = updatedMatch._id;
 
-          // 🔍 Tìm xem đã có conversation giữa hai người chưa (dùng updatedMatch)
-          let conversation = await Conversation.findOne({
-            participants: { $all: [updatedMatch.user1Id, updatedMatch.user2Id], $size: 2 },
-          });
-
-          if (!conversation) {
-            // 🆕 Chưa có → tạo mới
-            conversation = await Conversation.create({
-              participants: [updatedMatch.user1Id, updatedMatch.user2Id],
-              matchId: updatedMatch._id,
-              lastMessage: {
-                text: "Hai bạn đã kết nối! 💕",
-                timestamp: new Date(),
-              },
-            });
-            console.log(`🆕 New conversation created: ${conversation._id}`);
-          } else {
-            console.log(`♻️ Existing conversation reused: ${conversation._id}`);
-          }
-
-          // Atomically update match with conversationId and status
+          // Atomically update match status
           await Match.findByIdAndUpdate(updatedMatch._id, {
-            $set: { conversationId: conversation._id, status: 'matched', matchedAt: new Date() }
+            $set: { status: 'matched', matchedAt: new Date() }
           });
 
-          // ✅ Chuyển tin nhắn tạm (3 phút) sang Conversation chính
+          // Move temp messages (if any) into Message collection using chatRoomId = matchId
           if (updatedMatch.tempChatId) {
             const tempChat = await TemporaryChat.findById(updatedMatch.tempChatId);
             if (tempChat && tempChat.messages.length > 0) {
               const tempMessages = tempChat.messages.map((msg) => ({
+                chatRoomId: matchIdForChat,
                 senderId: msg.senderId,
                 content: msg.content,
-                timestamp: msg.timestamp,
+                createdAt: msg.timestamp,
+                updatedAt: msg.timestamp
               }));
 
-              await Conversation.findByIdAndUpdate(conversation._id, {
-                $push: { messages: { $each: tempMessages } },
-              });
+              await Message.insertMany(tempMessages);
 
               await TemporaryChat.findByIdAndDelete(updatedMatch.tempChatId);
-              console.log(`💬 Moved ${tempMessages.length} temp messages → ${conversation._id}`);
+              console.log(`💬 Moved ${tempMessages.length} temp messages → match ${matchIdForChat}`);
             }
           }
 
-          // ✅ Gửi thông báo match thành công cho cả 2 người
+          // Notify both users using match id as conversationId
           const roomId = chatRoom?.roomId;
           if (roomId) {
             io.to(roomId).emit("mutual_match", {
-              conversationId: conversation._id,
+              conversationId: matchIdForChat,
               message: "🎉 Cả hai đã thích nhau! Giờ bạn có thể chat vĩnh viễn!",
             });
           }
 
-          // ✅ Hủy đếm giờ 3 phút (nếu có)
+          // Cancel 3-minute timer (if any)
           if (roomId) clearChatTimer(roomId);
 
-          console.log(`🎉 MUTUAL MATCH → Conversation ${conversation._id}`);
+          console.log(`🎉 MUTUAL MATCH → Match ${matchIdForChat}`);
         }
       } catch (error) {
         console.error("❌ Error in like_partner:", error);
@@ -343,61 +336,95 @@ export const initChatSocket = (io) => {
     // ==========================================
     // 4. GỬI TIN NHẮN VĨNH VIỄN (SAU KHI MATCH)
     // ==========================================
-    socket.on("send_message", async ({ conversationId, message, tempId }) => {
+    socket.on("send_message", async ({ conversationId, message, tempId, senderId }) => {
       try {
-        const conversation = await Conversation.findById(conversationId);
-        if (!conversation) {
-          socket.emit("error", { message: "Conversation not found" });
+        console.log(`📨 Received send_message: conversationId=${conversationId}, senderId=${senderId}, message=${message}`);
+
+        // Use senderId from payload or socket data
+        const userId = senderId || socket.data.userId;
+        if (!userId) {
+          console.error("❌ No userId found in socket.data or payload");
+          socket.emit("error", { message: "Unauthorized - No user ID" });
           return;
         }
 
-        const userId = socket.data.userId;
-        if (!conversation.participants.includes(userId)) {
+        // conversationId is actually matchId
+        const match = await Match.findById(conversationId);
+        if (!match) {
+          console.error(`❌ Match not found: ${conversationId}`);
+          socket.emit("error", { message: "Match not found" });
+          return;
+        }
+
+        const isUser1 = match.user1Id.toString() === userId;
+        const isUser2 = match.user2Id.toString() === userId;
+
+        if (!isUser1 && !isUser2) {
+          console.error(`❌ Unauthorized: userId=${userId}, user1Id=${match.user1Id}, user2Id=${match.user2Id}`);
           socket.emit("error", { message: "Unauthorized" });
           return;
         }
 
-        // Tạo object message mới
-        const newMessage = {
+        // Create new message in Message collection
+        const newMessage = await Message.create({
+          chatRoomId: conversationId,
           senderId: userId,
           content: message,
-          timestamp: new Date(),
-          isRead: false
-        };
+          type: 'text',
+          status: 'sent',
+          timestamp: new Date()
+        });
 
-        // Thêm vào mảng messages
-        conversation.messages.push(newMessage);
+        console.log(`✅ Message saved: ${newMessage._id}`);
 
-        // Update lastMessage
-        conversation.lastMessage = {
+        // Update lastMessage in Match
+        match.lastMessage = {
           text: message,
           senderId: userId,
           timestamp: new Date()
         };
-        conversation.updatedAt = new Date();
+        match.updatedAt = new Date();
 
-        // Update unread count cho partner
-        const partnerId = conversation.participants.find(p => p.toString() !== userId);
-        const currentUnread = conversation.unreadCount.get(partnerId.toString()) || 0;
-        conversation.unreadCount.set(partnerId.toString(), currentUnread + 1);
+        // Update unread count for partner
+        const partnerId = isUser1 ? match.user2Id.toString() : match.user1Id.toString();
+        const currentUnread = match.unreadCount.get(partnerId) || 0;
+        match.unreadCount.set(partnerId, currentUnread + 1);
 
-        await conversation.save();
+        await match.save();
 
-        // Emit tin nhắn cho tất cả participants kèm tempId để client thay thế tin tạm
-        conversation.participants.forEach(participantId => {
-          io.to(`user_${participantId}`).emit("new_message", {
-            conversationId,
-            message: {
-              ...newMessage,
-              tempId // giữ tempId nếu muốn sync client
-            }
-          });
-        });
+        // Emit message to both users
+        const user1Room = `user_${match.user1Id}`;
+        const user2Room = `user_${match.user2Id}`;
 
-        console.log(`💬 New message in conversation ${conversationId}`);
+        // Try to fetch sender name to include in payload so clients can display sender
+        let senderName = 'Ai đó';
+        try {
+          const senderUser = await User.findById(userId).select('name');
+          if (senderUser && senderUser.name) senderName = senderUser.name;
+        } catch (e) {
+          console.warn('Could not fetch sender user for notif payload', e?.message || e);
+        }
+
+        const payload = {
+          conversationId,
+          message: {
+            _id: newMessage._id,
+            senderId: newMessage.senderId,
+            senderName,
+            content: newMessage.content,
+            timestamp: newMessage.timestamp,
+            tempId
+          }
+        };
+
+        io.to(user1Room).emit('new_message', payload);
+        io.to(user2Room).emit('new_message', payload);
+
+        console.log(`💬 Message emitted to both users in match ${conversationId}`);
 
       } catch (error) {
-        console.error("❌ Error sending message:", error);
+        console.error("❌ Error sending message:", error.message);
+        socket.emit("error", { message: "Failed to send message: " + error.message });
       }
     });
 
@@ -406,10 +433,15 @@ export const initChatSocket = (io) => {
     // ==========================================
     socket.on("typing", ({ conversationId, isTyping }) => {
       const userId = socket.data.userId;
-      Conversation.findById(conversationId).then(conv => {
-        if (conv) {
-          const partnerId = conv.participants.find(p => p.toString() !== userId);
-          io.to(`user_${partnerId}`).emit("partner_typing", { conversationId, isTyping });
+      Match.findById(conversationId).then(match => {
+        if (match) {
+          const partnerId = match.user1Id.toString() === userId 
+            ? match.user2Id.toString() 
+            : match.user1Id.toString();
+
+          if (partnerId) {
+            io.to(`user_${partnerId}`).emit("partner_typing", { conversationId, isTyping });
+          }
         }
       });
     });
@@ -420,26 +452,20 @@ export const initChatSocket = (io) => {
     socket.on("mark_as_read", async ({ conversationId }) => {
       try {
         const userId = socket.data.userId;
-        const conversation = await Conversation.findById(conversationId);
+        const match = await Match.findById(conversationId);
         
-        if (conversation) {
-          conversation.unreadCount.set(userId, 0);
-          await conversation.save();
+        if (match) {
+          match.unreadCount.set(userId.toString(), 0);
+          await match.save();
 
-          // Mark messages as read
+          // Mark messages as read in Message collection
           await Message.updateMany(
             {
-              conversationId,
-              senderId: { $ne: userId },
-              'readBy.userId': { $ne: userId }
+              chatRoomId: conversationId,
+              senderId: { $ne: userId }
             },
             {
-              $push: {
-                readBy: {
-                  userId,
-                  readAt: new Date()
-                }
-              }
+              $set: { isRead: true }
             }
           );
         }

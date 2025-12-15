@@ -3,9 +3,6 @@
 
 // routes/conversationRoutes.js
 import express from 'express';
-import Conversation from '../models/Conversation.js';
-import Message from '../models/Message.js';
-import User from '../models/User.js';
 import{
   getConversations, getMessages, sendMessage } from '../controllers/conversationController.js';
 const router = express.Router();

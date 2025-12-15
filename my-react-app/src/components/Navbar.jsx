@@ -15,7 +15,7 @@ export default function Navbar({ user: controlledUser, socket, unreadCount = 0 }
 
   const navItems = [
     { label: "Find Love", path: "/feed" },
-    { label: "Match", path: "/chat" },
+    { label: "Random Chat", path: "/chat" },
     { label: "Messages", path: "/messenger" },
     { label: "Library", path: "/library-invite" },
     { label: "Community", path: "/community" },
@@ -88,7 +88,7 @@ export default function Navbar({ user: controlledUser, socket, unreadCount = 0 }
 
   return (
     <nav className="fixed top-0 z-50 w-full border-b border-rose-100/80 bg-white/90 backdrop-blur">
-      <div className="mx-auto grid w-full max-w-[1280px] grid-cols-[auto_1fr_auto] items-center gap-4 px-4 py-3 lg:px-8">
+      <div className="mx-auto ml-2 lg:ml-[calc(54%-640px)] grid w-full max-w-[1280px] grid-cols-[auto_1fr_auto] items-center gap-4 px-4 py-3 lg:px-8">
         <Link to="/" className="flex min-w-max items-center gap-2 text-[22px] font-semibold text-slate-900">
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-rose-100 text-rose-500">
             <Heart className="h-4 w-4" />

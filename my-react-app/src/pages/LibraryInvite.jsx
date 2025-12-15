@@ -1,9 +1,32 @@
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useEffect, useState, useContext, useMemo, useCallback } from 'react';
 import { X, Plus, Info } from 'lucide-react';
 import { UserContext } from '../contexts';
 
 export default function LibraryInvite() {
   const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+  // Helper: robustly extract avatar URL from occupant object
+  const extractAvatar = (o) => {
+    if (!o || typeof o === 'string') return null;
+    const fields = ['avatar', 'photo', 'picture', 'profilePic', 'avatarUrl', 'avatar_url', 'image', 'imageUrl', 'url'];
+    for (const f of fields) {
+      const v = o[f];
+      if (!v) continue;
+      if (typeof v === 'string' && v.trim()) return v;
+      if (typeof v === 'object') {
+        if (typeof v.url === 'string' && v.url.trim()) return v.url;
+        if (typeof v.secure_url === 'string' && v.secure_url.trim()) return v.secure_url;
+      }
+    }
+    // fallback: some APIs nest under 'avatar' object with different keys
+    if (o.avatar && typeof o.avatar === 'object') {
+      if (o.avatar.secure_url) return o.avatar.secure_url;
+      if (o.avatar.url) return o.avatar.url;
+    }
+    if (o.photo && typeof o.photo === 'object') {
+      if (o.photo.url) return o.photo.url;
+    }
+    return null;
+  };
   const [invites, setInvites] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -19,7 +42,9 @@ export default function LibraryInvite() {
   const [createStart, setCreateStart] = useState('');
   const [createEnd, setCreateEnd] = useState('');
   const [createLoading, setCreateLoading] = useState(false);
+  const [toast, setToast] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [detailRoom, setDetailRoom] = useState(null);
 
   const { user: ctxUser } = useContext(UserContext) || {};
@@ -31,23 +56,29 @@ export default function LibraryInvite() {
         const res = await fetch(`${API_BASE || ''}/api/library/rooms`);
         if (res.ok) {
           const json = await res.json();
-          const list = (json.rooms || []).map((r) => {
+          const fetched = json.rooms || [];
+          const invitesAcc = [];
+          const list = fetched.map((r) => {
             const occupantIds = (r.occupants || []).map((o) => (o && (o._id || o.toString())) || String(o));
             const occupantNames = (r.occupants || []).map((o) => (o && o.name) || (typeof o === 'string' ? o : ''));
+            const occupantAvatars = (r.occupants || []).map((o) => extractAvatar(o));
             const id = r._id || r.id || String(r._id || Date.now());
             const joined = ctxUser ? occupantIds.includes(String(ctxUser.id || ctxUser._id || ctxUser._id)) : false;
             const createdBy = r.createdBy ? (r.createdBy._id || r.createdBy).toString() : null;
 
-            // Collect pending invites for current user as recipient
+            // Collect pending invites for current user as recipient (accumulate)
             const userInvites = (r.invites || [])
               .filter((inv) => inv.receiverId && String(inv.receiverId) === String(ctxUser?.id || ctxUser?._id))
               .filter((inv) => inv.status === 'pending')
               .map((inv) => ({ ...inv, roomId: id }));
 
-            setInvites((prev) => [...prev, ...userInvites]);
-            return { ...r, id, occupants: occupantIds, occupantNames, joined, createdBy, startTime: r.startTime, endTime: r.endTime };
+            if (userInvites.length) invitesAcc.push(...userInvites);
+            return { ...r, id, occupants: occupantIds, occupantNames, occupantAvatars, joined, createdBy, startTime: r.startTime, endTime: r.endTime };
           });
+
+          // Update state once to avoid many re-renders
           setRooms(list);
+          if (invitesAcc.length) setInvites(invitesAcc);
         } else {
           setRooms([]);
         }
@@ -58,7 +89,25 @@ export default function LibraryInvite() {
     })();
   }, [ctxUser]);
 
-  async function joinRoom(roomId) {
+  // Debounce search input to avoid frequent recomputations
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim().toLowerCase()), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // Memoize filtered rooms for smoother rendering
+  const filteredRooms = useMemo(() => {
+    const q = debouncedSearch || '';
+    if (!q) return rooms;
+    return rooms.filter((room) => {
+      return (
+        (room.name || '').toLowerCase().includes(q) ||
+        ((room.description || '').toLowerCase().includes(q))
+      );
+    });
+  }, [rooms, debouncedSearch]);
+
+  const joinRoom = useCallback(async (roomId) => {
     if (!ctxUser) return alert('Vui lòng đăng nhập để vào phòng.');
     try {
       const res = await fetch(`${API_BASE || ''}/api/library/rooms/${roomId}/join`, {
@@ -76,18 +125,19 @@ export default function LibraryInvite() {
       const r = data.room;
       const occupantIds = (r.occupants || []).map((o) => (o && (o._id || o.toString())) || String(o));
       const occupantNames = (r.occupants || []).map((o) => (o && o.name) || (typeof o === 'string' ? o : ''));
+      const occupantAvatars = (r.occupants || []).map((o) => extractAvatar(o));
       const id = r._id || r.id || roomId;
       const joined = occupantIds.includes(String(ctxUser.id || ctxUser._id));
-      const normalized = { ...r, id, occupants: occupantIds, occupantNames, joined };
+      const normalized = { ...r, id, occupants: occupantIds, occupantNames, occupantAvatars, joined };
 
       setRooms((prev) => prev.map((it) => (String(it.id) === String(id) ? normalized : it)));
     } catch (err) {
       console.error('Join room failed:', err);
       alert('Không thể vào phòng. Vui lòng thử lại.');
     }
-  }
+  }, [ctxUser, API_BASE]);
 
-  async function deleteRoom(roomId) {
+  const deleteRoom = useCallback(async (roomId) => {
     if (!ctxUser) return alert('Vui lòng đăng nhập.');
     if (!confirm('Bạn có chắc muốn xóa phòng này?')) return;
     try {
@@ -104,7 +154,7 @@ export default function LibraryInvite() {
       console.error('Delete room failed:', err);
       alert('Xóa phòng thất bại. Vui lòng thử lại.');
     }
-  }
+  }, [ctxUser, API_BASE]);
 
   function openInviteModal(room) {
     setModalRoom(room);
@@ -132,6 +182,8 @@ export default function LibraryInvite() {
     })();
   }
 
+  const openInviteModalCb = useCallback((room) => openInviteModal(room), [/* room passed in */]);
+
   function openCreateModal() {
     setCreateName('');
     setCreateSubject('');
@@ -141,6 +193,10 @@ export default function LibraryInvite() {
     setCreateEnd('');
     setCreateModalOpen(true);
   }
+
+  const openDetail = useCallback((room) => {
+    setDetailRoom(room);
+  }, []);
 
   function closeCreateModal() {
     setCreateModalOpen(false);
@@ -184,9 +240,10 @@ export default function LibraryInvite() {
           const list = (listJson.rooms || []).map((r) => {
             const occupantIds = (r.occupants || []).map((o) => (o && (o._id || o.toString())) || String(o));
             const occupantNames = (r.occupants || []).map((o) => (o && o.name) || (typeof o === 'string' ? o : ''));
+            const occupantAvatars = (r.occupants || []).map((o) => extractAvatar(o));
             const id = r._id || r.id || String(r._id || Date.now());
             const joined = ctxUser ? occupantIds.includes(String(ctxUser.id || ctxUser._id || ctxUser._id)) : false;
-            return { ...r, id, occupants: occupantIds, occupantNames, joined };
+            return { ...r, id, occupants: occupantIds, occupantNames, occupantAvatars, joined };
           });
           setRooms(list);
         }
@@ -215,9 +272,7 @@ export default function LibraryInvite() {
     return true;
   })();
 
-  function openDetail(room) {
-    setDetailRoom(room);
-  }
+  
 
   function closeDetail() {
     setDetailRoom(null);
@@ -229,6 +284,13 @@ export default function LibraryInvite() {
     setSelectedUserId('');
     setMatchedUsers([]);
   }
+
+  // Auto-hide toast
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   async function handleModalSend() {
     if (!selectedUserId) return alert('Vui lòng chọn một người để mời.');
@@ -250,7 +312,7 @@ export default function LibraryInvite() {
 
       // On success, close modal and refresh
       closeInviteModal();
-      alert('Gửi lời mời thành công!');
+      setToast({ msg: 'Gửi lời mời thành công!', type: 'success' });
     } catch (err) {
       console.error('Send invite failed:', err);
       alert('Gửi lời mời thất bại. Vui lòng thử lại.');
@@ -275,10 +337,11 @@ export default function LibraryInvite() {
           const list = (listJson.rooms || []).map((r) => {
             const occupantIds = (r.occupants || []).map((o) => (o && (o._id || o.toString())) || String(o));
             const occupantNames = (r.occupants || []).map((o) => (o && o.name) || (typeof o === 'string' ? o : ''));
+            const occupantAvatars = (r.occupants || []).map((o) => (o && typeof o === 'object' ? (o.avatar || o.photo || null) : null));
             const id = r._id || r.id || String(r._id || Date.now());
             const joined = ctxUser ? occupantIds.includes(String(ctxUser.id || ctxUser._id || ctxUser._id)) : false;
             const createdBy = r.createdBy ? (r.createdBy._id || r.createdBy).toString() : null;
-            return { ...r, id, occupants: occupantIds, occupantNames, joined, createdBy, startTime: r.startTime, endTime: r.endTime };
+            return { ...r, id, occupants: occupantIds, occupantNames, occupantAvatars, joined, createdBy, startTime: r.startTime, endTime: r.endTime };
           });
           setRooms(list);
         }
@@ -313,25 +376,29 @@ export default function LibraryInvite() {
   const pending = invites.filter(i => i.status === 'pending' || i.status === 'Pending');
 
   return (
-    <div className="min-h-screen bg-[#fff8fb] pt-16">
+    <div className="min-h-screen bg-gradient-to-br from-[#fff4f6] via-[#fff8fb] to-[#fffaf6] pt-16">
       <div className="mx-auto w-full max-w-6xl px-4 py-16">
 
         <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-          <section className="rounded-2xl border border-rose-50 bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-lg font-semibold text-slate-800">Phòng thư viện</h2>
+          <section className="rounded-3xl border border-rose-50 bg-white/80 p-6 shadow-md backdrop-blur-sm">
+            <h2 className="mb-4 text-2xl font-extrabold text-rose-600">Phòng thư viện</h2>
 
-            <div className="mb-4 flex items-center justify-between gap-4">
+            <div className="mb-6 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Tìm phòng, môn học..."
-                  className="w-full max-w-md rounded-xl border border-slate-200 px-4 py-2 text-sm shadow-sm"
-                />
-                <button onClick={() => setSearchQuery('')} className="text-sm text-slate-500">Xóa</button>
+                <div className="relative">
+                  <input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Tìm phòng, môn học..."
+                    className="w-full max-w-lg rounded-2xl border border-rose-100 bg-white/60 px-4 py-3 text-sm shadow-md placeholder:italic placeholder:text-rose-200"
+                  />
+                  {searchQuery && (
+                    <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-rose-50 px-2 py-1 text-xs text-rose-500">Xóa</button>
+                  )}
+                </div>
               </div>
               <div>
-                <button onClick={openCreateModal} className="inline-flex items-center gap-2 rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-95">
+                <button onClick={openCreateModal} className="inline-flex items-center gap-3 rounded-full bg-gradient-to-br from-[#F7C6B7] to-rose-400 px-5 py-3 text-sm font-semibold text-white shadow-xl hover:scale-105 transition-transform">
                   <Plus className="h-4 w-4" /> Tạo room mới
                 </button>
               </div>
@@ -353,46 +420,61 @@ export default function LibraryInvite() {
                 const isFull = available <= 0;
                 const fillPct = Math.round((room.occupants.length / room.capacity) * 100);
                 return (
-                  <div key={room.id} className="flex items-center justify-between gap-4 rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+                  <div key={room.id} className="flex items-center justify-between gap-4 rounded-2xl border border-rose-50 bg-white p-4 shadow-lg">
                     <div className="flex flex-1 flex-col justify-between">
                       <div className="flex items-center justify-between">
-                        <div className="text-sm font-semibold text-slate-800">{room.name}</div>
-                        <div className="text-xs text-slate-500">{room.occupants.length}/{room.capacity}</div>
+                        <div className="text-lg font-semibold text-slate-800">{room.name}</div>
                       </div>
-                      <div className="mt-1 text-xs text-slate-500">{room.description}</div>
+                      <div className="mt-1 text-sm text-slate-600">{room.description}</div>
                       {room.occupantNames && room.occupantNames.length > 0 && (
-                        <div className="mt-2">
-                          <div className="text-xs text-slate-500 mb-1">Thành viên:</div>
-                          <div className="grid grid-cols-3 gap-1">
-                            {room.occupantNames.slice(0, 6).map((n, idx) => (
-                              <div key={idx} className="truncate rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">{n}</div>
-                            ))}
-                            {room.occupantNames.length > 6 && (
-                              <div className="truncate rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">+{room.occupantNames.length - 6}</div>
+                        <div className="mt-3">
+                          <div className="text-xs text-slate-500 mb-2">Thành viên:</div>
+                          <div className="flex items-center -space-x-2 pr-4">
+                            {(room.occupantAvatars || room.occupantNames || []).slice(0, 6).map((a, idx) => {
+                              const name = (room.occupantNames && room.occupantNames[idx]) || '';
+                              if (a) {
+                                return (
+                                  <img
+                                    key={idx}
+                                    title={name}
+                                    src={a}
+                                    alt={name}
+                                    className="h-8 w-8 rounded-full object-cover ring-2 ring-white shadow-sm"
+                                  />
+                                );
+                              }
+                              const initials = (name || '').split(' ').map(s => s[0]).slice(0,2).join('');
+                              return (
+                                <div key={idx} title={name} className="h-8 w-8 flex items-center justify-center rounded-full bg-rose-100 text-xs text-rose-700 ring-2 ring-white shadow-sm">{initials}</div>
+                              );
+                            })}
+                            {(room.occupantNames || []).length > 6 && (
+                              <div className="h-8 w-8 flex items-center justify-center rounded-full bg-slate-100 text-xs text-slate-600 ring-2 ring-white">+{(room.occupantNames || []).length - 6}</div>
                             )}
                           </div>
                         </div>
                       )}
                       {room.startTime && (
-                        <div className="mt-1 text-xs text-slate-500">Thời gian: {new Date(room.startTime).toLocaleString()}{room.endTime ? ` — ${new Date(room.endTime).toLocaleString()}` : ''}</div>
+                        <div className="mt-2 text-sm text-slate-500">Thời gian: <span className="text-teal-600 font-medium">{new Date(room.startTime).toLocaleString()}</span>{room.endTime ? ` — ${new Date(room.endTime).toLocaleString()}` : ''}</div>
                       )}
-                      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                        <div style={{ width: `${fillPct}%` }} className="h-2 bg-teal-400" />
+                      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-teal-50">
+                        <div style={{ width: `${fillPct}%` }} className="h-2 bg-teal-400 shadow-inner" />
                       </div>
 
                       <div className="mt-3">
-                        <button onClick={() => openDetail(room)} className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium border border-slate-100 text-slate-700 hover:bg-slate-50">
+                        <button onClick={() => openDetail(room)} className="inline-flex items-center gap-2 rounded-lg px-3 py-1 text-sm font-medium border border-rose-100 text-rose-600 hover:bg-rose-50">
                           <Info className="h-4 w-4" />
                           <span>Chi tiết</span>
                         </button>
                       </div>
                     </div>
 
-                      <div className="flex flex-col items-end gap-2">
+                      <div className="flex flex-col items-end gap-3">
+                        <div className="text-xs  font-medium text-teal-600 bg-teal-50 px-2 py-1 rounded-md">{room.occupants.length}/{room.capacity}</div>
                       <button
                         onClick={() => joinRoom(room.id)}
                         disabled={isFull || room.joined}
-                        className={`rounded-full px-4 py-2 text-sm font-semibold transition-transform duration-150 ${(isFull || room.joined) ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-gradient-to-br from-teal-400 to-teal-500 text-white shadow-[0_10px_30px_-18px_rgba(56,189,248,0.35)] hover:scale-105'}`}
+                        className={`rounded-full px-5 py-2 text-sm font-semibold transition-transform duration-150 ${(isFull || room.joined) ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-gradient-to-br from-[#F7C6B7] to-rose-400 text-white shadow-[0_12px_30px_-18px_rgba(247,198,183,0.45)] hover:scale-105'}`}
                       >
                         {isFull ? 'Đầy' : room.joined ? 'Đã vào' : 'Vào'}
                       </button>
@@ -403,7 +485,7 @@ export default function LibraryInvite() {
                             openInviteModal(room);
                           }}
                           disabled={isFull || !room.joined}
-                          className={`rounded-full px-3 py-1 text-sm font-semibold ${(isFull || !room.joined) ? 'text-slate-300 cursor-not-allowed' : 'border border-rose-100 text-rose-500 hover:bg-rose-50'}`}
+                          className={`rounded-full px-3 py-1 text-sm font-semibold ${(isFull || !room.joined) ? 'text-slate-300 cursor-not-allowed' : 'border border-rose-100 text-rose-600 hover:bg-rose-50'}`}
                         >
                           Mời
                         </button>
@@ -420,10 +502,19 @@ export default function LibraryInvite() {
 
           <aside className="space-y-6">
 
-            <div className="rounded-2xl border border-rose-50 bg-white p-4 shadow-sm">
-              <h3 className="mb-3 text-sm font-semibold text-slate-700">Lời mời tôi nhận được ({pending.length})</h3>
+            <div className="rounded-2xl border border-rose-50 bg-white p-6 shadow-md">
+              <h3 className="mb-4 text-lg font-extrabold text-rose-600">Lời mời tôi nhận được <span className="text-sm font-medium text-slate-500">({pending.length})</span></h3>
               {pending.length === 0 ? (
-                <div className="text-sm text-slate-400">Không có lời mời nào đang chờ.</div>
+                <div className="flex flex-col items-center gap-3 text-sm text-slate-500">
+                  <svg width="80" height="80" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="opacity-90">
+                    <path d="M3 7v10a2 2 0 0 0 2 2h14V5H5a2 2 0 0 0-2 2z" fill="#E9F8F8" />
+                    <path d="M6 3v4" stroke="#7AD7D1" strokeWidth="1.2" strokeLinecap="round" />
+                    <path d="M12 7v6" stroke="#F7C6B7" strokeWidth="1.4" strokeLinecap="round" />
+                    <path d="M9 12h6" stroke="#F7C6B7" strokeWidth="1.4" strokeLinecap="round" />
+                  </svg>
+                  <div className="font-medium">Không có lời mời nào đang chờ</div>
+                  <div className="text-xs text-slate-400">Hãy tạo phòng hoặc mời bạn bè để khởi đầu một buổi học thật hiệu quả.</div>
+                </div>
               ) : (
                 <ul className="space-y-3">
                   {pending.map((i) => (
@@ -592,6 +683,15 @@ export default function LibraryInvite() {
               <div className="mt-4 flex justify-end gap-3">
                 <button onClick={closeDetail} className="rounded-full border border-slate-200 px-4 py-2 text-sm">Đóng</button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Toast */}
+        {toast && (
+          <div className="fixed top-6 right-6 z-50">
+            <div className={`max-w-xs rounded-lg px-4 py-2 shadow-lg ${toast.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}>
+              {toast.msg}
             </div>
           </div>
         )}

@@ -79,7 +79,7 @@ export default function YourCrush() {
             </div>
 
             <div className="mt-6 flex items-center justify-end gap-3">
-              <button onClick={() => navigate('/feed')} className="rounded-full px-4 py-2 text-sm border border-rose-100">Tới Match List</button>
+              <button onClick={() => navigate('/messenger')} className="rounded-full px-4 py-2 text-sm border border-rose-100">Tới Match List</button>
               <button onClick={handleRemove} disabled={removing} className="rounded-full bg-rose-500 px-4 py-2 text-sm text-white">
                 {removing ? 'Đang hủy...' : 'Hủy Crush Bí Mật'}
               </button>
@@ -89,7 +89,7 @@ export default function YourCrush() {
           <div className="rounded-2xl border border-rose-100 bg-white p-8 text-center">
             <p className="text-slate-700 mb-4">Bạn chưa chọn crush bí mật nào.</p>
             <div className="flex justify-center gap-3">
-              <button onClick={() => navigate('/feed')} className="rounded-full bg-rose-500 px-4 py-2 text-sm text-white">Tới BK Crush / Match List</button>
+              <button onClick={() => navigate('/messenger')} className="rounded-full bg-rose-500 px-4 py-2 text-sm text-white">Tới BK Crush / Match List</button>
             </div>
           </div>
         )}
