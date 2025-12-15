@@ -1,3 +1,4 @@
+//chat.jsx
 import { useEffect, useState, useRef, useContext } from "react";
 import { useNavigate } from 'react-router-dom';
 import { SocketContext } from "../contexts";
@@ -7,7 +8,7 @@ const pastelGradient = 'bg-[#fff5f8]';
 
 
 export default function RandomChat() {
-  const [socket, setSocket] = useState(null);
+  const { socket } = useContext(SocketContext);
   const [user, setUser] = useState(null);
   const [partner, setPartner] = useState(null);
   const [isFinding, setIsFinding] = useState(false);
@@ -16,7 +17,6 @@ export default function RandomChat() {
   const [compatibilityScore, setCompatibilityScore] = useState(null);
   const API_URL = import.meta.env.VITE_API_URL;
 
-  const { socket: newSocket } = useContext(SocketContext) ?? {};
   
   // ✅ TIMER STATE
   const [timeRemaining, setTimeRemaining] = useState(180); // 3 phút = 180 giây
@@ -59,10 +59,10 @@ export default function RandomChat() {
 const navigate = useNavigate();
 
   useEffect(() => {
-  if (!newSocket) return;
+  if (!socket) return;
 
   // ===== PARTNER FOUND =====
-  newSocket.on("partner_found", (data) => {
+  socket.on("partner_found", (data) => {
     console.log("💞 Partner found:", data);
     console.log("🔍 Partner hobbies:", data.hobbies); // ✅ THÊM DÒNG NÀY
     console.log("🔍 Partner hobbies type:", typeof data.hobbies); // ✅ VÀ DÒNG NÀY
@@ -82,19 +82,19 @@ const navigate = useNavigate();
   });
 
   // ===== TIMER UPDATE =====
-  newSocket.on("timer_update", ({ remaining }) => {
+  socket.on("timer_update", ({ remaining }) => {
     setTimeRemaining(remaining);
     if (remaining === 0) setIsExpired(true);
   });
 
   // ===== CHAT EXPIRED =====
-  newSocket.on("chat_expired", ({ message }) => {
+  socket.on("chat_expired", ({ message }) => {
     setIsExpired(true);
     alert(message || "Thời gian chat đã hết! Hãy like để tiếp tục.");
   });
 
   // ===== RECEIVE TEMP MESSAGE =====
-  newSocket.on("receive_temp_message", (data) => {
+  socket.on("receive_temp_message", (data) => {
     console.log("📩 Received message:", data);
     setMessages(prev => [...prev, {
       from: "partner",
@@ -104,13 +104,13 @@ const navigate = useNavigate();
   });
 
   // ===== PARTNER LIKED YOU =====
-  newSocket.on("partner_liked_you", () => {
+  socket.on("partner_liked_you", () => {
     setPartnerLiked(true);
     console.log("💖 Partner liked you!");
   });
 
   // ===== MUTUAL MATCH =====
-  newSocket.on("mutual_match", ({ conversationId: convId, message }) => {
+  socket.on("mutual_match", ({ conversationId: convId, message }) => {
     console.log("🎉 Mutual match received! Conversation:", convId);
     console.log("📦 Full data:", { conversationId: convId, message });
     
@@ -134,7 +134,7 @@ const navigate = useNavigate();
   });
 
   // ===== NEW MESSAGE =====
-  newSocket.on("new_message", ({ conversationId: convId, message }) => {
+  socket.on("new_message", ({ conversationId: convId, message }) => {
     // Sử dụng conversationId hiện tại để lọc message
     setMessages(prev => {
       if (convId === conversationIdRef.current) {
@@ -149,35 +149,34 @@ const navigate = useNavigate();
   });
 
   // ===== PARTNER DISCONNECTED =====
-  newSocket.on("partner_disconnected", () => {
+  socket.on("partner_disconnected", () => {
     alert("Người kia đã rời khỏi cuộc trò chuyện!");
     resetChat();
   });
 
-  setSocket(newSocket);
 
   return () => {
     console.log("🔌 Removing chat listeners");
-    newSocket.off("partner_found");
-    newSocket.off("timer_update");
-    newSocket.off("chat_expired");
-    newSocket.off("receive_temp_message");
-    newSocket.off("partner_liked_you");
-    newSocket.off("mutual_match");
-    newSocket.off("new_message");
-    newSocket.off("partner_disconnected");
+    socket.off("partner_found");
+    socket.off("timer_update");
+    socket.off("chat_expired");
+    socket.off("receive_temp_message");
+    socket.off("partner_liked_you");
+    socket.off("mutual_match");
+    socket.off("new_message");
+    socket.off("partner_disconnected");
   };
 
-}, [newSocket, navigate]); // depend on newSocket so listeners attach after context socket is ready
+}, [socket, navigate]); // depend on socket so listeners attach after context socket is ready
 
   useEffect(() => {
     conversationIdRef.current = conversationId;
   }, [conversationId]);
 
   useEffect(() => {
-    if (!newSocket || !conversationId) return;
-    newSocket.emit("join_conversations", conversationId);
-  }, [newSocket, conversationId]);
+    if (!socket || !conversationId) return;
+    socket.emit("join_conversations", conversationId);
+  }, [socket, conversationId]);
 
 
   // ✅ AUTO SCROLL messages
@@ -359,7 +358,7 @@ const navigate = useNavigate();
                           <p className="text-sm text-slate-500">Hệ thống sẽ tìm người phù hợp nhất với bạn ✨</p>
                           <button
                             onClick={handleFindPartner}
-                            disabled={!newSocket || !user}
+                            disabled={!socket || !user}
                             className="mt-4 rounded-full bg-rose-400 px-4 py-2 text-sm font-semibold text-white"
                           >
                             Bắt đầu tìm kiếm
