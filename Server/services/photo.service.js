@@ -37,3 +37,38 @@ export const uploadProfilePhoto = async (userId, fileBuffer, fileMimetype) => {
     throw error;
   }
 };
+
+export const uploadPostImage = async (userId, fileBuffer, fileMimetype) => {
+  if (!userId || !fileBuffer || fileBuffer.length === 0) {
+    throw new Error('uploadPostImage requires userId and file buffer.');
+  }
+
+  const mimeType = fileMimetype || 'image/jpeg';
+  const base64Payload = fileBuffer.toString('base64');
+  const dataUri = `data:${mimeType};base64,${base64Payload}`;
+  
+  try {
+    const uploadResult = await cloudinary.uploader.upload(dataUri, {
+      // ✅ THAY ĐỔI FOLDER: Lưu vào thư mục riêng cho bài đăng
+      folder: `HUSTLove/posts/${userId}`, 
+      public_id: `post-${userId}-${Date.now()}`,
+      overwrite: true,
+      resource_type: 'image',
+      // ✅ CÁC THAM SỐ CROP KHÁC CHO BÀI ĐĂNG (Ví dụ: tỷ lệ 16:9 hoặc không crop)
+      transformation: [
+        {
+          width: 800,
+          height: 450,
+          crop: 'limit', // Giới hạn kích thước nhưng không cắt
+          fetch_format: 'auto',
+          quality: 'auto',
+        },
+      ],
+    });
+
+    return uploadResult.secure_url;
+  } catch (error) {
+    console.error('Failed to upload post image to Cloudinary:', error);
+    throw error;
+  }
+};
