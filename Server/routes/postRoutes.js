@@ -3,48 +3,78 @@ import Post from '../models/Post.js';
 import { Comment } from '../models/Comment.js';
 import { createNotification } from '../models/Notification.js';
 import User from '../models/User.js';
-
+import multer from 'multer';
+import { uploadPostImage } from '../services/photo.service.js';
 const router = express.Router();
-
+const upload = multer({ storage: multer.memoryStorage() });
 // ==========================================
 // CREATE POST
 // ==========================================
-router.post('/posts', async (req, res) => {
-  try {
-    const { userId, content, images, privacy } = req.body;
+router.post('/posts', upload.single('image'), async (req, res) => {
+  try {
+    // Dữ liệu text (userId, content, privacy) nằm trong req.body
+    const { userId, content, privacy } = req.body;
+    // Dữ liệu file (ảnh) nằm trong req.file
+    const imageFile = req.file; 
 
-    if (!content || !userId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required fields'
-      });
-    }
+    if (!content || !userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: userId or content'
+      });
+    }
 
-    const post = await Post.create({
-      userId,
-      content,
-      images: images || [],
-      privacy: privacy || 'public'
-    });
+    let imageUrls = [];
 
-    await post.populate('userId', 'name avatar');
+    // 1. Xử lý upload ảnh nếu có file được gửi lên
+    if (imageFile) {
+      console.log('Uploading image for post...');
+      try {
+        // Gọi hàm upload ảnh Cloudinary
+        const url = await uploadPostImage(
+          userId, 
+          imageFile.buffer, // Buffer của file từ Multer
+          imageFile.mimetype // Mime type của file
+        );
+        imageUrls.push({ url: url });
+        console.log('Image uploaded successfully:', url);
+      } catch (uploadError) {
+        console.error('Cloudinary upload failed:', uploadError);
+        // Nếu upload ảnh thất bại, trả về lỗi
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to upload image'
+        });
+      }
+    }
 
-    if (req.io) {
-      req.io.emit('post:new', post);
-    }
+    // 2. Tạo bài đăng (sử dụng imageUrls đã upload)
+    const post = await Post.create({
+      userId,
+      content,
+      // ✅ LƯU URL ẢNH VÀO ĐÂY
+      images: imageUrls, 
+      privacy: privacy || 'public'
+    });
 
-    res.status(201).json({
-      success: true,
-      post
-    });
+    await post.populate('userId', 'name avatar');
 
-  } catch (error) {
-    console.error('Error creating post:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
+    if (req.io) {
+      req.io.emit('post:new', post);
+    }
+
+    res.status(201).json({
+      success: true,
+      post
+    });
+
+  } catch (error) {
+    console.error('Error creating post:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 // ==========================================
