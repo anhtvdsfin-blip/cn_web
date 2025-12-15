@@ -144,6 +144,7 @@ function App() {
           <Route path="/onboarding/photo-upload" element={<PhotoManagement />} />
           <Route path="/onboarding/opening-move" element={<OpeningMoveOnboarding onComplete={() => { window.location.href = '/feed'; }} />} />
           <Route path="/community" element={<Community />} />
+          <Route path="/messenger/:id" element={<Messenger />} />
         </Routes>
       </SocketContext.Provider>
     </UserContext.Provider>

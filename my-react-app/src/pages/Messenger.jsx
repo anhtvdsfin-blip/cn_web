@@ -12,8 +12,8 @@ import {
 } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { Heart, Smile, ImageIcon, Send, MoreHorizontal } from 'lucide-react';
-import { Toaster } from 'react-hot-toast';
+import { Heart, Smile, ImageIcon,Image as ImageIcon, Send, MoreHorizontal } from 'lucide-react';
+import toast,{ Toaster } from 'react-hot-toast';
 import toast from 'react-hot-toast';
 import { SocketContext } from '../contexts';
 import { enhanceMessage, sortConversations, SCROLL_THRESHOLD, formatTimestamp, enhanceConversation } from '../utils/messageHelpers';
@@ -129,64 +129,6 @@ const MessageInput = memo(function MessageInput({ value, onChange, onSend, onTyp
     [onSend, value]
   );
 
-  const handleChange = useCallback(
-    (event) => {
-      onChange(event.target.value);
-      onTyping();
-    },
-    [onChange, onTyping]
-  );
-
-  const handleKeyDown = useCallback(
-    (event) => {
-      if (event.key === 'Enter' && !event.shiftKey) {
-        event.preventDefault();
-        const trimmed = value.trim();
-        if (!trimmed) return;
-        onSend(trimmed);
-      }
-    },
-    [onSend, value]
-  );
-
-  return (
-    <form onSubmit={handleSubmit} className="rounded-b-[32px] border-t border-white/60 bg-white/80 px-5 py-4">
-      <div className="flex items-center gap-3 rounded-full border border-rose-200 bg-white/70 px-4 py-2 shadow-sm shadow-rose-100">
-        <button
-          type="button"
-          className="rounded-full p-2 text-rose-300 transition hover:bg-rose-50 hover:text-rose-400"
-          aria-label="Gửi reaction"
-        >
-          <Smile className="h-5 w-5" />
-        </button>
-        <button
-          type="button"
-          className="rounded-full p-2 text-rose-300 transition hover:bg-rose-50 hover:text-rose-400"
-          aria-label="Gửi ảnh"
-        >
-          <ImageIcon className="h-5 w-5" />
-        </button>
-        <input
-          type="text"
-          value={value}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          placeholder="Gửi lời yêu thương..."
-          className="flex-1 bg-transparent text-sm text-slate-700 placeholder-rose-300 outline-none"
-          autoFocus
-        />
-        <button
-          type="submit"
-          disabled={!value.trim()}
-          className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#f7b0d2] via-[#f59fb6] to-[#fdd2b7] px-5 py-2 text-sm font-semibold text-white shadow-sm shadow-rose-200 transition hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <Send className="h-4 w-4" />
-          Gửi
-        </button>
-      </div>
-    </form>
-  );
-});
 
 // ============================================
 // CHAT HEADER (Memoized) - inline
@@ -263,169 +205,119 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
   const hasMoreRef = useRef(true);
   const loadingMoreRef = useRef(false);
 
+export default function Messenger() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const params = useParams();
+  // Support conversation id coming from either location.state or URL param
+  const targetConversationId = location.state?.conversationId || params.id;
+  const [user, setUser] = useState(null);
+  const [conversations, setConversations] = useState([]);
+  const [selectedConversation, setSelectedConversation] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [inputValue, setInputValue] = useState('');
+  const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const messagesEndRef = useRef(null);
+  const API_URL = import.meta.env.VITE_API_URL;
+  const { socket } = useContext(SocketContext);
+
   const [showMenu, setShowMenu] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [isCrush, setIsCrush] = useState(false);
   const [isMutual, setIsMutual] = useState(false);
   const [crushLoading, setCrushLoading] = useState(false);
 
+
+
+  // ✅ Load user
   useEffect(() => {
-    if (!socket || !user?.id) return;
-    socket.emit('auth_user', { userId: user.id });
-    socket.emit('join_conversations', user.id);
-  }, [socket, user?.id]);
-
-  useEffect(() => {
-    if (!socket || !user?.id) return;
-
-    const handleNewMessage = ({ conversationId, message }) => {
-      setConversations((prev) => {
-        const idx = prev.findIndex((c) => c._id === conversationId);
-        if (idx === -1) return prev;
-
-        const conv = prev[idx];
-        const isActive = selectedConversationId === conversationId;
-
-        const updatedConv = {
-          ...conv,
-          lastMessage: {
-            text: message.content,
-            timestamp: message.timestamp,
-            formattedTime: formatTimestamp(message.timestamp),
-          },
-          // do not increment unread for active conversation
-          unreadCount: isActive ? conv.unreadCount : (conv.unreadCount || 0) + 1,
-        };
-
-        if (isActive) {
-          // keep the original order for active conversation; update in place
-          const next = [...prev];
-          next[idx] = updatedConv;
-          return next;
-        }
-
-        // for inactive conversations, move to front and increment unread
-        return [updatedConv, ...prev.slice(0, idx), ...prev.slice(idx + 1)];
-      });
-
-      if (selectedConversationId !== conversationId) return;
-
-      setMessages((prev) => {
-        const formatted = enhanceMessage(message, user.id, true);
-        lastMessageMetaRef.current = { id: formatted._id, fromSelf: formatted.isSelf };
-
-        const tempIndex = prev.findIndex((item) => item._id === message.tempId);
-        if (tempIndex !== -1) {
-          const next = [...prev];
-          next[tempIndex] = { ...formatted, shouldAnimate: false };
-          return next;
-        }
-
-        if (prev.some((item) => item._id === formatted._id)) return prev;
-        return [...prev, formatted];
-      });
-    };
-
-    const handlePartnerTyping = ({ conversationId, isTyping: typing }) => {
-      if (selectedConversationId === conversationId) setIsTyping(typing);
-    };
-
-    socket.on('new_message', handleNewMessage);
-    socket.on('partner_typing', handlePartnerTyping);
-
-    return () => {
-      socket.off('new_message', handleNewMessage);
-      socket.off('partner_typing', handlePartnerTyping);
-    };
-  }, [socket, user?.id, selectedConversationId, setConversations]);
-
-  const displayedMessages = useMemo(() => {
-    const MAX_RENDER = 200;
-    if (!messages || messages.length <= MAX_RENDER) return messages;
-    return messages.slice(messages.length - MAX_RENDER);
-  }, [messages]);
-
-  const selectedConversationRef = useRef(selectedConversationId);
-  useEffect(() => {
-    selectedConversationRef.current = selectedConversationId;
-    setShowMenu(false);
-  }, [selectedConversationId]);
-
-  // fetch messages when conversation changes
-  useEffect(() => {
-    const conversationId = selectedConversationId;
-    if (!conversationId || !API_URL || !user?.id) {
-      setMessages([]);
+    const userData = JSON.parse(sessionStorage.getItem('user') || '{}');
+    if (!userData.id) {
+      navigate('/login');
       return;
     }
+    setUser(userData);
+  }, [navigate]);
 
-    let cancelled = false;
-    const load = async () => {
-      try {
-        setMessages([]);
-        shouldAutoScrollRef.current = true;
-        const res = await axios.get(`${API_URL}/api/messages/${conversationId}?limit=${PAGE_SIZE}`);
-        if (cancelled) return;
-        if (res.data?.success) {
-          let mapped = (res.data.messages || []).map((m) => enhanceMessage(m, user.id, false));
-          // ensure chronological order oldest->newest
-          mapped.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-          setMessages(mapped);
-          oldestMessageTimestampRef.current = mapped[0]?.timestamp ?? null;
-          hasMoreRef.current = (mapped.length === PAGE_SIZE);
-          lastMessageMetaRef.current = { id: null, fromSelf: false };
-        }
-        if (socket) socket.emit('mark_as_read', { conversationId });
-      } catch (err) {
-        console.error('Error loading messages for conversation:', err);
+  const selectedConversationRef = useRef(selectedConversation);
+  useEffect(() => {
+    selectedConversationRef.current = selectedConversation;
+  }, [selectedConversation]);
+
+  // ✅ Socket connection
+  useEffect(() => {
+    if (!socket || !user) return;
+
+    socket.emit("join_conversation", user.id);
+
+    socket.on('new_message', ({ conversationId, message }) => {
+      console.log('📩 New message received:', { conversationId, message });
+
+      if (selectedConversationRef.current?._id === conversationId) {
+        setMessages(prev => {
+          const tempIndex = prev.findIndex(m => m._id === message.tempId);
+          if (tempIndex !== -1) {
+            const updated = [...prev];
+            updated[tempIndex] = {
+              _id: message._id,
+              senderId: message.senderId,
+              content: message.content,
+              timestamp: message.timestamp,
+              createdAt: message.timestamp
+            };
+            return updated;
+          }
+
+          if (prev.some(m => m._id === message._id)) return prev;
+
+          return [...prev, {
+            _id: message._id,
+            senderId: message.senderId,
+            content: message.content,
+            timestamp: message.timestamp,
+            createdAt: message.timestamp
+          }];
+        });
       }
-    };
 
-    load();
+      setConversations(prev => prev.map(conv => {
+        if (conv._id === conversationId) {
+          return {
+            ...conv,
+            lastMessage: { text: message.content, timestamp: message.timestamp },
+            unreadCount: conv._id === selectedConversationRef.current?._id
+              ? conv.unreadCount
+              : (conv.unreadCount || 0) + 1
+          };
+        }
+        return conv;
+      }).sort((a, b) => new Date(b.lastMessage?.timestamp) - new Date(a.lastMessage?.timestamp)));
+    });
+
+    socket.on('partner_typing', ({ conversationId, isTyping: typing }) => {
+      if (selectedConversationRef.current?._id === conversationId) {
+        setIsTyping(typing);
+      }
+    });
 
     return () => {
-      cancelled = true;
+      socket.off('new_message');
+      socket.off('partner_typing');
     };
-  }, [selectedConversationId, API_URL, user?.id, socket]);
+  }, [user, socket]); 
 
-  const loadOlderMessages = useCallback(async () => {
-    const conversationId = selectedConversationId;
-    if (!conversationId || !API_URL || !user?.id) return;
-    if (loadingMoreRef.current || !hasMoreRef.current) return;
-
-    const container = messagesRef.current;
-    loadingMoreRef.current = true;
+  // ✅ Select conversation
+  const handleSelectConversation = useCallback(async (conv) => {
+    console.log('📂 Selecting conversation:', conv._id);
+    setSelectedConversation(conv);
+    
     try {
-      const before = oldestMessageTimestampRef.current;
-      const res = await axios.get(
-        `${API_URL}/api/messages/${conversationId}?limit=${PAGE_SIZE}${before ? `&before=${encodeURIComponent(before)}` : ''}`
-      );
-      if (res.data?.success) {
-        let fetched = (res.data.messages || []).map((m) => enhanceMessage(m, user.id, false));
-        // ensure chronological order oldest->newest
-        fetched.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-        if (fetched.length > 0) {
-          const prevScrollHeight = container ? container.scrollHeight : 0;
-          setMessages((prev) => {
-            const next = [...fetched, ...prev];
-            return next;
-          });
-
-          // after DOM updates, restore scroll position so user stays at same message
-          requestAnimationFrame(() => {
-            if (!container) return;
-            const newScrollHeight = container.scrollHeight;
-            container.scrollTop = newScrollHeight - prevScrollHeight;
-          });
-
-          oldestMessageTimestampRef.current = fetched[0]?.timestamp ?? oldestMessageTimestampRef.current;
-          hasMoreRef.current = fetched.length === PAGE_SIZE;
-        } else {
-          hasMoreRef.current = false;
-        }
+      const res = await axios.get(`${API_URL}/api/messages/${conv._id}`);
+      
+      if (res.data.success) {
+        console.log('📬 Loaded messages:', res.data.messages.length);
+        setMessages(res.data.messages);
       }
     } catch (err) {
       console.error('Error loading older messages:', err);
@@ -561,96 +453,61 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
       return;
     }
 
-    const { id, fromSelf } = lastMessageMetaRef.current;
-    const shouldUseSmooth = msgsLen < 5;
+      if (socket) {
+        socket.emit('mark_as_read', { conversationId: conv._id });
+      }
 
-    // avoid multiple reads of scrollHeight per render
-    const bottom = container.scrollHeight;
+      setConversations(prev => prev.map(c => 
+        c._id === conv._id ? { ...c, unreadCount: 0 } : c
+      ));
 
-    if (id === null) {
-      if (shouldUseSmooth) requestAnimationFrame(() => (container.scrollTop = bottom));
-      else container.scrollTop = bottom;
-      shouldAutoScrollRef.current = true;
-      return;
+    } catch (error) {
+      console.error('Error loading messages:', error);
     }
-
-    if (fromSelf || shouldAutoScrollRef.current) requestAnimationFrame(() => (container.scrollTop = bottom));
-
-    lastMessageMetaRef.current = { id: null, fromSelf: false };
-    // dependencies: only react to changes in the refs' current values
-  }, [messages.length, /* trigger on message count changes */ shouldAutoScrollRef.current]);
-
-  
-
-  const handleSendMessage = useCallback(
-    (text) => {
-      if (!socket || !selectedConversation || !user?.id) return;
-      const trimmed = text.trim();
-      if (!trimmed) return;
-
-      const now = new Date().toISOString();
-      const tempId = `temp-${Date.now()}`;
-
-      const tempMessage = enhanceMessage({ _id: tempId, senderId: user.id, content: trimmed, timestamp: now, createdAt: now }, user.id, true);
-
-      lastMessageMetaRef.current = { id: tempMessage._id, fromSelf: true };
-      setMessages((prev) => [...prev, tempMessage]);
-
-      socket.emit('send_message', { conversationId: selectedConversation._id, message: trimmed, senderId: user.id, tempId });
-
-      setConversations((prev) =>
-        sortConversations(
-          prev.map((conversation) =>
-            conversation._id === selectedConversation._id
-              ? { ...conversation, lastMessage: { text: trimmed, timestamp: now, formattedTime: tempMessage.formattedTime } }
-              : conversation
-          )
-        )
-      );
-    },
-    [socket, selectedConversation, user?.id, setConversations]
-  );
-
-  const handleTyping = useCallback(() => {
-    if (!socket || !selectedConversation) return;
-    socket.emit('typing', { conversationId: selectedConversation._id, isTyping: true });
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => socket.emit('typing', { conversationId: selectedConversation._id, isTyping: false }), 800);
-  }, [socket, selectedConversation]);
-
-  const handleToggleMenu = useCallback(() => {
-    if (!selectedConversation) return;
-    setShowMenu((prev) => !prev);
-  }, [selectedConversation]);
-
-  const handleReport = useCallback(async () => {
-    if (!selectedConversation || actionLoading || !API_URL || !user?.id) return;
-    setActionLoading(true);
+    // Navigate to conversation route so URL reflects selected conversation
     try {
-      await axios.post(`${API_URL}/api/conversations/${selectedConversation._id}/report`, { reporterId: user.id });
-      toast.success('Đã báo cáo');
-    } catch (err) {
-      console.error('Report failed', err);
-      toast.error('Báo cáo thất bại');
-    } finally {
-      setActionLoading(false);
+      navigate(`/messenger/${conv._id}`, { state: { conversationId: conv._id } });
+    } catch (e) {
+      console.error('❌ Navigation error:', e);
     }
-  }, [API_URL, actionLoading, selectedConversation, user?.id]);
+  }, [API_URL, socket, navigate]);
 
-  const handleBlock = useCallback(async () => {
-    if (!selectedConversation || actionLoading || !API_URL || !user?.id) return;
-    setActionLoading(true);
+  // ✅ Fetch conversations
+
+  const fetchConversations = useCallback(async () => {
+    if (!user) return;
+
     try {
-      await axios.post(`${API_URL}/api/conversations/${selectedConversation._id}/block`, { userId: user.id });
-      toast.success('Đã chặn');
-      setConversations((prev) => prev.filter((c) => c._id !== selectedConversation._id));
-    } catch (err) {
-      console.error('Block failed', err);
-      toast.error('Chặn thất bại');
-    } finally {
-      setActionLoading(false);
+      const res = await axios.get(`${API_URL}/api/conversations?userId=${user.id}`);
+
+
+      await new Promise(resolve => setTimeout(resolve, 300)); 
+      
+
+
+
+      if (res.data.success) {
+        setConversations(res.data.conversations);
+        console.log("Conversations:", res.data.conversations);
+
+
+        if (targetConversationId && !selectedConversation) {
+          const conv = res.data.conversations.find(c => c._id === targetConversationId);
+          if (conv) {
+            handleSelectConversation(conv);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching conversations:', error);
     }
-  }, [API_URL, actionLoading, selectedConversation, user?.id, setConversations]);
+  }, [API_URL, handleSelectConversation, selectedConversation, targetConversationId, user]);
+
+  useEffect(() => {
+    if (user) {
+      fetchConversations();
+    }
+  }, [fetchConversations, user]);
 
   return (
     <>
@@ -690,12 +547,28 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
     </>
   );
 }
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
-function MessengerPage() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { socket } = useContext(SocketContext) ?? {};
-  const API_URL = import.meta.env.VITE_API_URL;
+  // ✅ Send message
+  const handleSendMessage = (e) => {
+    e.preventDefault();
+    
+    if (!socket || !input.trim() || !selectedConversation) return;
+
+    const tempId = Date.now().toString();
+
+    const tempMessage = {
+      _id: tempId,
+      senderId: user.id,
+      content: input,
+      timestamp: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      temp: true
+    };
+    
+    setMessages(prev => [...prev, tempMessage]);
 
   // ========== MAIN PAGE STATE ==========
   const [user, setUser] = useState(null);
@@ -704,38 +577,36 @@ function MessengerPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [myCrushMatch, setMyCrushMatch] = useState(null);
   const [myCrushIsMutual, setMyCrushIsMutual] = useState(false);
+    socket.emit('send_message', {
+      conversationId: selectedConversation._id,
+      message: input,
+      tempId
+    });
 
-  const targetHandledRef = useRef(false);
+    setInput('');
+  };
 
-  // ========== AUTH CHECK ==========
-  useEffect(() => {
-    const userData = JSON.parse(sessionStorage.getItem('user') || '{}');
-    if (!userData.id) {
-      navigate('/login');
-      return;
+  // ✅ Typing indicator
+  const handleTyping = () => {
+    if (socket && selectedConversation) {
+      socket.emit('typing', {
+        conversationId: selectedConversation._id,
+        isTyping: true
+      });
+
+      setTimeout(() => {
+        socket.emit('typing', {
+          conversationId: selectedConversation._id,
+          isTyping: false
+        });
+      }, 1000);
     }
-    setUser(userData);
-  }, [navigate]);
+  };
 
-  // ========== FETCH CONVERSATIONS ==========
-  useEffect(() => {
-    if (!user?.id || !API_URL) return;
-
-    const fetchConversations = async () => {
-      try {
-        const res = await axios.get(`${API_URL}/api/conversations?userId=${user.id}`);
-        if (res.data.success) {
-          const mapped = res.data.conversations.map(enhanceConversation);
-          const sorted = sortConversations(mapped);
-          setConversations(sorted);
-        }
-      } catch (error) {
-        console.error('Error fetching conversations:', error);
-      }
-    };
-
-    fetchConversations();
-  }, [user?.id, API_URL]);
+  const handleBlockOrReport = async (type) => {
+    // Lấy ID của người đang xem (đối tác trò chuyện)
+    const targetId = selectedConversation?.partnerId; 
+    const blockerId = user?.id; // ID của người đang đăng nhập
 
   // ========== FETCH CURRENT USER CRUSH (persist indicator across reloads) ==========
   useEffect(() => {
@@ -774,53 +645,83 @@ function MessengerPage() {
     if (targetConversation) {
       targetHandledRef.current = true;
       setSelectedConversationId(targetConversation._id);
+    if (!targetId || !blockerId || actionLoading) {
+        toast.error("Thiếu thông tin người dùng hoặc đang tải.");
+        return;
     }
-  }, [conversations, location.state?.conversationId]);
-
-  // ========== MATCH ID HANDLER (from notification click) ==========
-  useEffect(() => {
-    const searchParams = new URLSearchParams(location.search);
-    const matchId = searchParams.get('matchId');
-    if (!matchId || targetHandledRef.current) return;
-
-    const targetConversation = conversations.find((conversation) => conversation.matchId && conversation.matchId.toString() === matchId);
-
-    if (targetConversation) {
-      targetHandledRef.current = true;
-      setSelectedConversationId(targetConversation._id);
+    
+    // 1. Confirmation Modal cho hành động BLOCK
+    if (type === 'block') {
+        const confirmBlock = window.confirm(
+            `Bạn có chắc chắn muốn CHẶN ${selectedConversation.partnerName} không? Cuộc trò chuyện này sẽ bị đóng.`
+        );
+        if (!confirmBlock) {
+            setShowMenu(false);
+            return;
+        }
     }
-  }, [conversations, location.search]);
+    
+    const endpointPath = type === 'block' ? `block/${targetId}` : `report/${targetId}`;
+    const apiUrl = `${API_URL}/api/users/${endpointPath}`;
+    
+    const requestBody = {
+        blockerId: blockerId,
+        reporterId: blockerId,
+        reason: type === 'report' ? prompt("Lý do báo cáo (Không bắt buộc):") : undefined,
+    };
 
-  // simplified selection handler (only sets id) - stable reference
-  const handleSelectConversation = useCallback((conversationId) => {
-    if (!conversationId) return;
-    setSelectedConversationId((prev) => {
-      if (prev === conversationId) return prev;
-      targetHandledRef.current = false;
-      return conversationId;
-    });
-  }, []);
+    setActionLoading(true);
+    setShowMenu(false);
 
-  // stable create-new handler
-  const handleCreateNew = useCallback(() => navigate('/feed'), [navigate]);
+    try {
+        const res = await axios.post(apiUrl, requestBody); // Sử dụng axios đã import
+        
+        // Back-end Controller trả về 200/201 (res.status === 200/201)
 
-  const selectedConversation = useMemo(
-    () => conversations.find((conversation) => conversation._id === selectedConversationId) || null,
-    [conversations, selectedConversationId]
+        const message = type === 'block' 
+            ? `Đã chặn ${selectedConversation.partnerName}. Cuộc trò chuyện đã bị xóa.` 
+            : `Đã gửi báo cáo về ${selectedConversation.partnerName}.`;
+        
+        toast.success(message); 
+        
+        // ✨ LOGIC SAU BLOCK/REPORT ✨
+        if (type === 'block') {
+            // Xóa cuộc trò chuyện khỏi danh sách và clear cửa sổ chat
+            setConversations(prev => prev.filter(conv => conv._id !== selectedConversation._id));
+            setSelectedConversation(null);
+            setMessages([]);
+        }
+        
+    } catch (error) {
+        console.error("API Error:", error);
+        const errorMessage = error.response?.data?.message || 'Lỗi kết nối Server.';
+        toast.error(`Thao tác thất bại: ${errorMessage}`);
+        
+    } finally {
+        setActionLoading(false);
+    }
+};
+
+  const formatTime = (timestamp) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now - date;
+    
+    if (diff < 60000) return 'Vừa xong';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)} phút`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)} giờ`;
+    return date.toLocaleDateString('vi-VN');
+  };
+
+  const filteredConversations = conversations.filter(conv =>
+    conv.partnerName?.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
-  const filteredConversations = useMemo(() => {
-    const normalized = searchQuery.trim().toLowerCase();
-    if (!normalized) return conversations;
-    return conversations.filter((conversation) => conversation.partnerName?.toLowerCase().includes(normalized));
-  }, [conversations, searchQuery]);
 
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#fff1f5] via-[#fde5ef] to-[#ede9ff] px-4 pt-28 pb-24">
-      <Toaster position="top-right" toastOptions={{ duration: 2400 }} />
-      <div className="mx-auto flex min-h-[calc(100vh-12rem)] w-full max-w-6xl flex-col rounded-[40px] border border-white/50 bg-white/35 p-6 shadow-lg backdrop-blur-xl md:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-[#fff1f5] via-[#fde5ef] to-[#ede9ff] pt-20">
+      <div className="mx-auto flex h-[calc(100vh-5rem)] w-full max-w-6xl flex-col rounded-[40px] border border-white/50 bg-white/30 p-6 shadow-[0_50px_120px_-60px_rgba(233,114,181,0.55)] backdrop-blur-xl">
         <header className="flex items-center gap-3 rounded-[28px] border border-white/60 bg-white/50 px-6 py-4 text-sm font-semibold text-rose-500">
           <Heart className="h-5 w-5 text-rose-400" />
           <span>Kết nối đang chờ bạn • HUSTLove Messenger</span>
@@ -855,11 +756,134 @@ function MessengerPage() {
                 setMyCrushIsMutual={setMyCrushIsMutual}
               />
             </div>
+        )}
+    </div>
+</div>
+                </header>
+
+                <div className="flex-1 overflow-y-auto bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.7),_rgba(255,214,211,0.25)_58%,_transparent)] px-6 py-6">
+                  {messages.length === 0 ? (
+                    <div className="flex h-full flex-col items-center justify-center text-rose-300">
+                      <Heart className="mb-4 h-12 w-12" />
+                      <p className="text-sm font-medium">Chưa có tin nhắn nào</p>
+                      <p className="text-xs mt-1">Hãy gửi lời chào để mở đầu câu chuyện ✨</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {messages.map((msg, index) => {
+                        const isSelf = msg.senderId === user.id;
+                        return (
+                          <div
+                            key={msg._id || index}
+                            className={`flex ${isSelf ? 'justify-end' : 'justify-start'} animate-fadeIn`}
+                          >
+                            <div
+                              className={`max-w-[78%] rounded-3xl px-4 py-3 text-sm shadow ${
+                                isSelf
+                                  ? 'bg-gradient-to-r from-[#f7b0d2] via-[#f59fb6] to-[#fdd2b7] text-white'
+                                  : 'bg-white/85 text-slate-700'
+                              }`}
+                            >
+                              <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                              <p className={`mt-2 text-[11px] font-medium ${isSelf ? 'text-white/70' : 'text-rose-300'}`}>
+                                {msg.timestamp && formatTime(msg.timestamp)}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                <form onSubmit={handleSendMessage} className="rounded-b-[32px] border-t border-white/60 bg-white/80 px-5 py-4">
+                  <div className="flex items-center gap-3 rounded-full border border-rose-200 bg-white/70 px-4 py-2 shadow-sm shadow-rose-100">
+                    <button
+                      type="button"
+                      className="rounded-full p-2 text-rose-300 transition hover:bg-rose-50 hover:text-rose-400"
+                      aria-label="Gửi reaction"
+                    >
+                      <Smile className="h-5 w-5" />
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full p-2 text-rose-300 transition hover:bg-rose-50 hover:text-rose-400"
+                      aria-label="Gửi ảnh"
+                    >
+                      <ImageIcon className="h-5 w-5" />
+                    </button>
+                    <input
+                      type="text"
+                      value={input}
+                      onChange={(e) => {
+                        setInput(e.target.value);
+                        handleTyping();
+                      }}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendMessage(e);
+                        }
+                      }}
+                      placeholder="Gửi lời yêu thương..."
+                      className="flex-1 bg-transparent text-sm text-slate-700 placeholder-rose-300 outline-none"
+                      autoFocus
+                    />
+                    <button
+                      type="submit"
+                      disabled={!input.trim()}
+                      className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#f7b0d2] via-[#f59fb6] to-[#fdd2b7] px-5 py-2 text-sm font-semibold text-white shadow-sm shadow-rose-200 transition hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Send className="h-4 w-4" />
+                      Gửi
+                    </button>
+                  </div>
+                </form>
+              </>
+            ) : (
+              <div className="flex flex-1 flex-col items-center justify-center text-rose-300">
+                <Heart className="mb-4 h-14 w-14" />
+                <p className="text-base font-semibold">Chọn một cuộc trò chuyện để bắt đầu</p>
+                <p className="text-xs mt-2">Những rung động mới đang đợi bạn ở ngay bên trái</p>
+              </div>
+            )}
           </section>
         </div>
       </div>
+
+      {/* CSS */}
+      <style>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(15px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.4s ease-out;
+        }
+        
+        /* Custom scrollbar */
+        .overflow-y-auto::-webkit-scrollbar {
+          width: 8px;
+        }
+        .overflow-y-auto::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 10px;
+        }
+        .overflow-y-auto::-webkit-scrollbar-thumb {
+          background: rgba(168, 85, 247, 0.5);
+          border-radius: 10px;
+        }
+        .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+          background: rgba(168, 85, 247, 0.7);
+        }
+      `}</style>
     </div>
   );
 }
-
-export default memo(MessengerPage);
