@@ -10,6 +10,7 @@ import authRoutes from "./routes/authRoutes.js";
 import matchRoutes from "./routes/matchRoutes.js";  // NEW
 import connectDB from "./config/db.js";
 import matchingService from "./services/MatchingService.js";  // NEW
+import crushRoutes from './routes/crushRoutes.js';
 import conversationRoutes from './routes/conversationRoutes.js';
 import libraryRoutes from './routes/libraryRoutes.js';
 import { initChatSocket } from './socket/chatSocket.js';
@@ -98,6 +99,8 @@ app.use("/api/auth", authRoutes);
 app.use('/api/users', userRoutes);
 app.use("/api/match", matchRoutes);  // NEW
 app.use('/api/findlove', findLoveRoutes);
+// Crush API v1
+app.use('/api/v1', crushRoutes);
 app.use('/api', openingMoveRoutes);
 app.use('/api', conversationRoutes);
 app.use("/api", postRoutes);

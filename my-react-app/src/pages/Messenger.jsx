@@ -12,7 +12,7 @@ import {
 } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { Heart, Smile, ImageIcon, Send, HeartHandshake, MoreHorizontal } from 'lucide-react';
+import { Heart, Smile, ImageIcon, Send, MoreHorizontal } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 import toast from 'react-hot-toast';
 import { SocketContext } from '../contexts';
@@ -77,7 +77,7 @@ const MessageListBase = ({ messages, isTyping, onScroll, conversation, onUseOpen
                     <div className="mt-2 max-w-[90%] overflow-hidden rounded-lg bg-teal-100/90 p-3 text-sm text-slate-800">
                       {conversation.partnerOpeningMove.text}
                     </div>
-                    <div className="mt-3">
+                    {/* <div className="mt-3">
                       <button
                         type="button"
                         onClick={() => onUseOpeningMove?.(conversation.partnerOpeningMove.text)}
@@ -85,7 +85,7 @@ const MessageListBase = ({ messages, isTyping, onScroll, conversation, onUseOpen
                       >
                         Bấm để gửi ngay câu hỏi này
                       </button>
-                    </div>
+                    </div> */}
                   </div>
                   <div className="ml-3 text-rose-300">♡</div>
                 </div>
@@ -189,9 +189,9 @@ const MessageInput = memo(function MessageInput({ value, onChange, onSend, onTyp
 });
 
 // ============================================
-// CHAT HEADER (Memoized)
+// CHAT HEADER (Memoized) - inline
 // ============================================
-const ChatHeader = memo(function ChatHeader({ conversation, isTyping, showMenu, onToggleMenu, onReport, onBlock, actionLoading }) {
+const ChatHeader = memo(function ChatHeader({ conversation, isTyping, showMenu, onToggleMenu, onReport, onBlock, actionLoading, onCrushToggle, isCrush, isMutual, crushLoading }) {
   return (
     <header className="flex items-center justify-between rounded-t-[32px] border-b border-white/60 bg-white/70 px-6 py-4">
       <div className="flex items-center gap-3">
@@ -201,16 +201,22 @@ const ChatHeader = memo(function ChatHeader({ conversation, isTyping, showMenu, 
         </div>
         <div>
           <p className="text-base font-semibold text-slate-800">{conversation.partnerName}</p>
-          <p className="text-xs font-medium uppercase tracking-[0.28em] text-rose-300">
-            {conversation.partnerClass || 'HUST K65'}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-medium uppercase tracking-[0.28em] text-rose-300">{conversation.partnerClass || 'HUST K65'}</p>
+            {isMutual && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-600">Be crush → Destiny!</span>}
+          </div>
           {isTyping && <p className="text-[11px] text-rose-400">đang nhập...</p>}
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <div className="hidden items-center gap-2 text-xs font-semibold text-rose-400 sm:flex">
-          <HeartHandshake className="h-4 w-4" />
-          <span>Kết nối an toàn</span>
+        <div className="hidden sm:flex">
+          <button
+            type="button"
+            onClick={() => { if (crushLoading || !onCrushToggle) return; onCrushToggle(isCrush ? 'remove' : 'set'); }}
+            className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold text-white ${isCrush ? 'bg-rose-500' : 'bg-gradient-to-br from-[#f7b0d2] to-[#fdd2b7]'} ${crushLoading ? 'opacity-70 cursor-wait' : 'hover:scale-105'}`}
+          >
+            {isCrush ? 'Crushed!!' : 'Crush'}
+          </button>
         </div>
         <div className="relative">
           <button
@@ -247,7 +253,7 @@ const ChatHeader = memo(function ChatHeader({ conversation, isTyping, showMenu, 
   );
 });
 
-function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConversationId, setConversations }) {
+function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConversationId, setConversations, myCrushMatch, myCrushIsMutual, setMyCrushMatch, setMyCrushIsMutual }) {
   const messagesRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const shouldAutoScrollRef = useRef(true);
@@ -262,6 +268,9 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
   const [isTyping, setIsTyping] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [isCrush, setIsCrush] = useState(false);
+  const [isMutual, setIsMutual] = useState(false);
+  const [crushLoading, setCrushLoading] = useState(false);
 
   useEffect(() => {
     if (!socket || !user?.id) return;
@@ -429,6 +438,108 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
   }, []);
 
+  // load crush status for selected conversation's match
+  useEffect(() => {
+    const matchIdRaw = selectedConversation?.matchId ?? selectedConversation?._id;
+    const matchId = matchIdRaw ? (typeof matchIdRaw === 'string' ? matchIdRaw : (matchIdRaw._id || matchIdRaw.toString())) : null;
+
+    // Prefer top-level fetched `myCrushMatch` when available so the indicator survives a full reload
+    if (myCrushMatch) {
+      const myMatchId = String(myCrushMatch._id || myCrushMatch);
+      const mine = myMatchId === String(matchId);
+      setIsCrush(mine);
+      setIsMutual(mine ? !!myCrushIsMutual : false);
+      return;
+    }
+
+    let cancelled = false;
+    if (!matchId || !user?.id) {
+      setIsCrush(false);
+      setIsMutual(false);
+      return;
+    }
+
+    const base = API_URL ? API_URL : '';
+    const loadCrushState = async () => {
+      try {
+        const res = await axios.get(`${base}/api/v1/user/my-crush?userId=${user.id}`);
+        if (cancelled) return;
+        if (res.data?.success && res.data.match) {
+          const myMatch = res.data.match;
+          const mine = String(myMatch._id) === String(matchId);
+          setIsCrush(mine);
+          setIsMutual(mine ? !!myMatch.isMutualCrush : false);
+        } else {
+          setIsCrush(false);
+          setIsMutual(false);
+        }
+      } catch (err) {
+        console.warn('Could not load crush state for matchId', matchId, err?.response?.data || err?.message || err);
+        setIsCrush(false);
+        setIsMutual(false);
+      }
+    };
+
+    loadCrushState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedConversation, API_URL, user?.id, myCrushMatch, myCrushIsMutual]);
+
+  const handleCrushToggle = useCallback(async (action) => {
+    const matchIdRaw = selectedConversation?.matchId ?? selectedConversation?._id;
+    const matchId = matchIdRaw ? (typeof matchIdRaw === 'string' ? matchIdRaw : (matchIdRaw._id || matchIdRaw.toString())) : null;
+    if (!matchId || !user?.id) {
+      console.warn('Crush toggle attempted but no matchId or user:', { matchId: matchIdRaw, user });
+      toast.error('Không tìm thấy thông tin crush.');
+      return;
+    }
+    // Enforce single-crush client-side: if user already has a different active crush, block
+    if (action === 'set' && myCrushMatch && String(myCrushMatch._id) !== String(matchId)) {
+      toast.error('Bạn chỉ được chọn 1 Crush. Hãy bỏ crush hiện tại trước khi crush người khác.');
+      return;
+    }
+    setCrushLoading(true);
+    try {
+      const base = API_URL ? API_URL : '';
+      if (action === 'set') {
+        const res = await axios.post(`${base}/api/v1/matches/${matchId}/set-crush`, { userId: user.id });
+        if (res.data?.success) {
+          setIsCrush(true);
+          // server returns updated match in res.data.match
+          const mutual = !!res.data.match?.isMutualCrush || !!res.data.isMutual || !!res.data.match?.isMutual;
+          setIsMutual(mutual);
+          // sync top-level stored crush so it persists across reloads
+          if (typeof setMyCrushMatch === 'function') setMyCrushMatch(res.data.match || { _id: matchId });
+          if (typeof setMyCrushIsMutual === 'function') setMyCrushIsMutual(mutual);
+          toast.success('Đã crush');
+        } else {
+          toast.error(res.data?.message || 'Thao tác thất bại');
+        }
+      } else {
+        const res = await axios.post(`${base}/api/v1/matches/${matchId}/remove-crush`, { userId: user.id });
+        if (res.data?.success) {
+          setIsCrush(false);
+          setIsMutual(false);
+          // if we removed our active crush, clear top-level record
+          if (myCrushMatch && String(myCrushMatch._id) === String(matchId)) {
+            if (typeof setMyCrushMatch === 'function') setMyCrushMatch(null);
+            if (typeof setMyCrushIsMutual === 'function') setMyCrushIsMutual(false);
+          }
+          toast.success('Đã bỏ crush');
+        } else {
+          toast.error(res.data?.message || 'Thao tác thất bại');
+        }
+      }
+    } catch (err) {
+      console.error('Crush action failed', err);
+      toast.error('Lỗi kết nối');
+    } finally {
+      setCrushLoading(false);
+    }
+  }, [selectedConversation, API_URL, user?.id, myCrushMatch, setMyCrushMatch, setMyCrushIsMutual]);
+
   const handleMessagesScroll = useCallback(() => {
     const container = messagesRef.current;
     if (!container) return;
@@ -553,6 +664,10 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
             onReport={handleReport}
             onBlock={handleBlock}
             actionLoading={actionLoading}
+            onCrushToggle={handleCrushToggle}
+            isCrush={isCrush}
+            isMutual={isMutual}
+            crushLoading={crushLoading}
           />
           <MessageList ref={messagesRef} messages={displayedMessages} isTyping={isTyping} onScroll={handleMessagesScroll} conversation={selectedConversation} onUseOpeningMove={(text) => { setInputValue(text || ''); }} />
           <MessageInput
@@ -587,6 +702,8 @@ function MessengerPage() {
   const [selectedConversationId, setSelectedConversationId] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [myCrushMatch, setMyCrushMatch] = useState(null);
+  const [myCrushIsMutual, setMyCrushIsMutual] = useState(false);
 
   const targetHandledRef = useRef(false);
 
@@ -618,6 +735,35 @@ function MessengerPage() {
     };
 
     fetchConversations();
+  }, [user?.id, API_URL]);
+
+  // ========== FETCH CURRENT USER CRUSH (persist indicator across reloads) ==========
+  useEffect(() => {
+    if (!user?.id || !API_URL) {
+      setMyCrushMatch(null);
+      setMyCrushIsMutual(false);
+      return;
+    }
+    let cancelled = false;
+    const fetchMyCrush = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/api/v1/user/my-crush?userId=${user.id}`);
+        if (cancelled) return;
+        if (res.data?.success && res.data.match) {
+          setMyCrushMatch(res.data.match);
+          setMyCrushIsMutual(!!res.data.match.isMutualCrush);
+        } else {
+          setMyCrushMatch(null);
+          setMyCrushIsMutual(false);
+        }
+      } catch (err) {
+        console.warn('Could not fetch my crush on load', err?.response?.data || err?.message || err);
+        setMyCrushMatch(null);
+        setMyCrushIsMutual(false);
+      }
+    };
+    fetchMyCrush();
+    return () => { cancelled = true; };
   }, [user?.id, API_URL]);
 
   // ========== TARGET CONVERSATION (from location.state) ==========
@@ -680,6 +826,8 @@ function MessengerPage() {
           <span>Kết nối đang chờ bạn • HUSTLove Messenger</span>
         </header>
 
+        
+
         <div className="mt-6 grid flex-1 grid-cols-1 gap-6 overflow-hidden lg:grid-cols-[0.32fr_0.68fr]">
           {/* ========== LEFT SIDEBAR: CONVERSATIONS ========== */}
           <ConversationListComponent
@@ -694,7 +842,18 @@ function MessengerPage() {
           {/* ========== RIGHT PANEL: CHAT (ChatPanel owns messages) ========== */}
           <section className="flex h-full min-h-0 max-h-[calc(100vh-14rem)] flex-col overflow-hidden rounded-[32px] border border-white/60 bg-white/75 shadow-lg">
             <div className="flex flex-1 flex-col overflow-hidden" >
-              <ChatPanel API_URL={API_URL} socket={socket} user={user} selectedConversation={selectedConversation} selectedConversationId={selectedConversationId} setConversations={setConversations} />
+              <ChatPanel
+                API_URL={API_URL}
+                socket={socket}
+                user={user}
+                selectedConversation={selectedConversation}
+                selectedConversationId={selectedConversationId}
+                setConversations={setConversations}
+                myCrushMatch={myCrushMatch}
+                myCrushIsMutual={myCrushIsMutual}
+                setMyCrushMatch={setMyCrushMatch}
+                setMyCrushIsMutual={setMyCrushIsMutual}
+              />
             </div>
           </section>
         </div>

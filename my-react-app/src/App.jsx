@@ -12,6 +12,7 @@ import Messenger from "./pages/Messenger";
 import LibraryInvite from './pages/LibraryInvite';
 import Community from "./pages/Community";
 import Chat from "./pages/Chat";
+import YourCrush from './pages/YourCrush';
 import { io } from "socket.io-client";
 import { useState, useEffect } from "react";
 import { SocketContext, UserContext } from "./contexts";
@@ -137,6 +138,7 @@ function App() {
           <Route path="/chat" element={<Chat />} />
           <Route path="/messenger" element={<Messenger />} />
           <Route path="/library-invite" element={<LibraryInvite />} />
+          <Route path="/your-crush" element={<YourCrush />} />
           <Route path="/complete-profile" element={<CompleteProfile />} />
           <Route path="/home" element={<BlankPage />} />
           <Route path="/onboarding/photo-upload" element={<PhotoManagement />} />
