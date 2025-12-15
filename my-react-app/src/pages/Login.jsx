@@ -72,6 +72,12 @@ export default function Login() {
 
       sessionStorage.setItem("user", JSON.stringify(userForChat));
 
+      // save access token for authenticated requests
+      if (res.data?.accessToken) {
+        sessionStorage.setItem('accessToken', res.data.accessToken);
+        axios.defaults.headers.common['Authorization'] = `Bearer ${res.data.accessToken}`;
+      }
+
       setUser(userForChat);
 
       // ✅ Kiểm tra đã lưu thành công chưa

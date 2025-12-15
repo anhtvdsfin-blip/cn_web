@@ -327,55 +327,67 @@ export default function Community() {
   // ==============================
   // CREATE POST - ✅ SỬ DỤNG FormData và FIX REALTIME
   // ==============================
-  const createPost = async () => {
-    // ✅ Thêm kiểm tra ảnh vào điều kiện
-    if (!content.trim() && !selectedImage) {
-      toast.error('Vui lòng nhập nội dung hoặc chọn ảnh để đăng bài.');
-      return;
-    }
+	const createPost = async () => {
+		// ✅ Thêm kiểm tra ảnh vào điều kiện
+		if (!content.trim() && !selectedImage) {
+			toast.error('Vui lòng nhập nội dung hoặc chọn ảnh để đăng bài.');
+			return;
+		}
 
-    // ✅ SỬ DỤNG FormData để gửi file
-    const formData = new FormData();
-    formData.append('userId', userId);
-    formData.append('content', content);
-    
-    if (selectedImage) {
-      formData.append('image', selectedImage); // Tên trường phải là 'image' ở Backend
-    }
+		// ensure we have a valid userId (try stored state or sessionStorage fallback)
+		const sessionUser = (() => {
+			try { return JSON.parse(sessionStorage.getItem('user') || '{}'); } catch { return {}; }
+		})();
+		const uid = (userId || sessionUser?.id || sessionUser?._id);
+		if (!uid) {
+			toast.error('Vui lòng đăng nhập để đăng bài.');
+			return;
+		}
 
-    try {
-      setSubmitting(true);
-      
-      const res = await fetch(`${API_URL}/api/posts`, {
-        method: 'POST',
-        // ❌ Bỏ headers: { 'Content-Type': 'application/json' }
-        body: formData,
-      });
+		// ✅ SỬ DỤNG FormData để gửi file
+		const formData = new FormData();
+		formData.append('userId', uid);
+		formData.append('content', content || '');
+    
+		if (selectedImage) {
+			formData.append('image', selectedImage); // Tên trường phải là 'image' ở Backend
+		}
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Lỗi tạo bài viết');
-      }
+		try {
+			setSubmitting(true);
+			console.debug('Creating post', { userId: uid, hasImage: !!selectedImage, contentLength: (content||'').length });
+			const token = sessionStorage.getItem('accessToken');
+			const res = await fetch(`${API_URL}/api/posts`, {
+				method: 'POST',
+				// Let browser set Content-Type for FormData; include Authorization if present
+				headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+				body: formData,
+			});
 
-      // ✅ FIX REALTIME: Lấy bài đăng mới từ response
-      const data = await res.json();
-      const newPost = data.post; 
-      
-      // ✅ FIX REALTIME: Cập nhật state posts ngay lập tức
-      if (newPost) {
-        setPosts(prev => [newPost, ...prev]);
-      }
+			if (!res.ok) {
+				const errorData = await res.json().catch(() => ({}));
+				throw new Error(errorData.error || errorData.message || 'Lỗi tạo bài viết');
+			}
 
-      setContent('');
-      removeImage(); // ✅ Reset ảnh
-      toast.success('Đăng bài thành công!');
-    } catch (err) {
-      console.error('Create post error:', err);
-      toast.error(err.message || 'Lỗi tạo bài viết');
-    } finally {
-      setSubmitting(false);
-    }
-  };
+			// ✅ FIX REALTIME: Lấy bài đăng mới từ response
+			const data = await res.json();
+			const newPost = data.post; 
+      
+			// ✅ FIX REALTIME: Cập nhật state posts ngay lập tức
+			if (newPost) {
+				setPosts(prev => [newPost, ...prev]);
+			}
+
+			setContent('');
+			removeImage(); // ✅ Reset ảnh
+			toast.success('Đăng bài thành công!');
+		} catch (err) {
+			console.error('Create post error:', err);
+			toast.error(err.message || 'Lỗi tạo bài viết');
+		} finally {
+			setSubmitting(false);
+		}
+	};
 
   // ==============================
   // TOGGLE LIKE - giữ nguyên
@@ -565,13 +577,14 @@ const createComment = async (postId) => {
 					/>
           
           {/* ✅ HIỂN THỊ VÀ XÓA ẢNH PREVIEW */}
-          {previewImage && (
-            <div className="relative mt-4 rounded-xl border border-rose-100 overflow-hidden">
-              <img 
-                src={previewImage} 
-                alt="Preview" 
-                className="w-full object-cover max-h-72" 
-              />
+					{previewImage && (
+						<div className="relative mt-4 rounded-xl border border-rose-100 overflow-hidden">
+							<img 
+								src={previewImage} 
+								alt="Preview" 
+								className="w-full object-contain max-h-72 bg-black/2" 
+								style={{ backgroundColor: 'rgba(0,0,0,0.02)' }}
+							/>
               <button 
                 onClick={removeImage} 
                 className="absolute top-2 right-2 bg-black/50 text-white rounded-full p-1 transition hover:bg-black/70"
@@ -705,15 +718,16 @@ const createComment = async (postId) => {
                   </p>
 					
                   {/* ✅ HIỂN THỊ ẢNH ĐÍNH KÈM */}
-                  {postImageUrl && (
-										<div className="mt-4">
-											<img
-												src={postImageUrl}
-												alt="Bài đăng có ảnh"
-												className="w-full rounded-xl object-cover max-h-96"
-											/>
-										</div>
-                  )}
+		  {postImageUrl && (
+									<div className="mt-4">
+										<img
+											src={postImageUrl}
+											alt="Bài đăng có ảnh"
+											className="w-full rounded-xl object-contain max-h-96 block mx-auto"
+											style={{ maxWidth: '100%' }}
+										/>
+									</div>
+		  )}
 
 									{/* INTERACTIONS */}
 									<div className="mt-5 flex items-center gap-6 text-slate-600">

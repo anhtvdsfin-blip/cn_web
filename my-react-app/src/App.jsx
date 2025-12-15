@@ -34,6 +34,16 @@ function App() {
     }
   }, []);
 
+  // Set axios Authorization header from stored accessToken when app loads or user changes
+  useEffect(() => {
+    const token = sessionStorage.getItem('accessToken');
+    if (token) {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    } else {
+      delete axios.defaults.headers.common['Authorization'];
+    }
+  }, [user]);
+
   useEffect(() => {
     const handleUserChange = () => {
       const storedUser = sessionStorage.getItem("user");
@@ -70,7 +80,9 @@ function App() {
         console.warn('user:join emit failed', e);
       }
       try {
-        newSocket.emit('auth_user', { userId: user.id }); // chatSocket expects this
+        const token = sessionStorage.getItem('accessToken');
+        if (token) newSocket.emit('auth_user', { token });
+        else newSocket.emit('auth_user', { userId: user.id }); // fallback
       } catch (e) {
         console.warn('auth_user emit failed', e);
       }

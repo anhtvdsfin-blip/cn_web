@@ -340,6 +340,9 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
   const [isCrush, setIsCrush] = useState(false);
   const [isMutual, setIsMutual] = useState(false);
   const [crushLoading, setCrushLoading] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportText, setReportText] = useState('');
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
 
   useEffect(() => {
     if (!socket || !user?.id) return;
@@ -708,34 +711,15 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
     setShowMenu((prev) => !prev);
   }, [selectedConversation]);
 
-  const handleReport = useCallback(async () => {
+  const handleReport = useCallback(() => {
     if (!selectedConversation || actionLoading || !API_URL || !user?.id) return;
-    setActionLoading(true);
-    try {
-      await axios.post(`${API_URL}/api/conversations/${selectedConversation._id}/report`, { reporterId: user.id });
-      toast.success('Đã báo cáo');
-    } catch (err) {
-      console.error('Report failed', err);
-      toast.error('Báo cáo thất bại');
-    } finally {
-      setActionLoading(false);
-    }
-  }, [API_URL, actionLoading, selectedConversation, user?.id]);
+    setShowReportModal(true);
+  }, [selectedConversation, actionLoading, API_URL, user?.id]);
 
-  const handleBlock = useCallback(async () => {
+  const handleBlock = useCallback(() => {
     if (!selectedConversation || actionLoading || !API_URL || !user?.id) return;
-    setActionLoading(true);
-    try {
-      await axios.post(`${API_URL}/api/conversations/${selectedConversation._id}/block`, { userId: user.id });
-      toast.success('Đã chặn');
-      setConversations((prev) => prev.filter((c) => c._id !== selectedConversation._id));
-    } catch (err) {
-      console.error('Block failed', err);
-      toast.error('Chặn thất bại');
-    } finally {
-      setActionLoading(false);
-    }
-  }, [API_URL, actionLoading, selectedConversation, user?.id, setConversations]);
+    setShowBlockConfirm(true);
+  }, [selectedConversation, actionLoading, API_URL, user?.id]);
 
   return (
     <>
@@ -765,6 +749,93 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
             onTyping={handleTyping}
             conversationId={selectedConversation?._id}
           />
+
+          {/* Report Modal */}
+          {showReportModal && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-rose-950/55 backdrop-blur-sm">
+              <div className="relative w-full max-w-md overflow-hidden rounded-[20px] border border-rose-100 bg-white p-6 shadow-lg">
+                <h3 className="text-lg font-semibold text-slate-900">Báo cáo {selectedConversation.partnerName}</h3>
+                <p className="mt-2 text-sm text-slate-600">Mô tả lý do báo cáo (không bắt buộc).</p>
+                <textarea
+                  value={reportText}
+                  onChange={(e) => setReportText(e.target.value)}
+                  className="mt-4 h-32 w-full rounded-md border border-rose-100 p-3 text-sm"
+                  placeholder="Nội dung báo cáo"
+                />
+                <div className="mt-4 flex justify-end gap-3">
+                  <button
+                    onClick={() => { setShowReportModal(false); setReportText(''); }}
+                    className="rounded-full border border-rose-100 bg-white px-4 py-2 text-sm text-rose-600"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        setActionLoading(true);
+                        const token = sessionStorage.getItem('accessToken');
+                        const res = await axios.post(`${API_URL}/api/users/report/${selectedConversation.partnerId}`, { reason: reportText }, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+                        toast.success(res.data?.message || 'Đã báo cáo');
+                        setShowReportModal(false);
+                        setReportText('');
+                      } catch (err) {
+                        console.error('Report failed', err);
+                        toast.error('Báo cáo thất bại');
+                      } finally {
+                        setActionLoading(false);
+                      }
+                    }}
+                    disabled={actionLoading}
+                    className="rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white"
+                  >
+                    Gửi báo cáo
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Block confirm modal */}
+          {showBlockConfirm && (
+            <div className="fixed inset-0 z-[80] flex items-center justify-center bg-rose-950/55 backdrop-blur-sm">
+              <div className="relative w-full max-w-sm overflow-hidden rounded-[20px] border border-rose-100 bg-white p-6 shadow-lg">
+                <h3 className="text-lg font-semibold text-slate-900">Chặn {selectedConversation.partnerName}?</h3>
+                <p className="mt-2 text-sm text-slate-600">Người dùng này sẽ bị chặn và bạn sẽ không thấy họ nữa.</p>
+                <div className="mt-4 flex gap-3">
+                  <button
+                    onClick={() => setShowBlockConfirm(false)}
+                    disabled={actionLoading}
+                    className="flex-1 rounded-full border border-rose-100 bg-white px-4 py-2 text-sm text-rose-600"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        setActionLoading(true);
+                        const token = sessionStorage.getItem('accessToken');
+                        const res = await axios.post(`${API_URL}/api/users/block/${selectedConversation.partnerId}`, {}, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+                        toast.success(res.data?.message || 'Người dùng đã bị chặn.');
+                        // remove conversation from list
+                        setConversations((prev) => prev.filter((c) => c._id !== selectedConversation._id));
+                        setSelectedConversationId(null);
+                        setShowBlockConfirm(false);
+                      } catch (err) {
+                        console.error('Block failed', err);
+                        toast.error('Chặn thất bại');
+                      } finally {
+                        setActionLoading(false);
+                      }
+                    }}
+                    disabled={actionLoading}
+                    className="flex-1 rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white"
+                  >
+                    Chặn và ẩn
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center text-rose-300">

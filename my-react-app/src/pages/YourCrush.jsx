@@ -18,7 +18,10 @@ export default function YourCrush() {
     (async () => {
       setLoading(true);
       try {
-        const res = await fetch(`${API_URL}/api/v1/user/my-crush?userId=${userId}`);
+        const headers = {};
+        const token = sessionStorage.getItem('accessToken');
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(`${API_URL}/api/v1/user/my-crush?userId=${userId}`, { headers, credentials: 'include' });
         if (!res.ok) {
           setMatch(null);
           setLoading(false);
@@ -39,8 +42,11 @@ export default function YourCrush() {
     if (!confirm('Bạn có chắc muốn hủy Crush bí mật này?')) return;
     setRemoving(true);
     try {
+      const headers = { 'Content-Type': 'application/json' };
+      const token = sessionStorage.getItem('accessToken');
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch(`${API_URL}/api/v1/matches/${match._id}/remove-crush`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId })
+        method: 'POST', credentials: 'include', headers, body: JSON.stringify({ userId })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed');

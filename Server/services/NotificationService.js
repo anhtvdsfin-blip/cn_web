@@ -1,5 +1,6 @@
 import { Notification } from '../models/Notification.js';
 import User from '../models/User.js';
+import mongoose from 'mongoose';
 
 export const notificationService = {
   /**
@@ -105,8 +106,33 @@ export const notificationService = {
    */
   async markAsRead(notificationId) {
     try {
-      const notification = await Notification.findByIdAndUpdate(
-        notificationId,
+      let notification = null;
+
+      // If the id looks like a valid ObjectId, use it directly
+      if (mongoose.Types.ObjectId.isValid(notificationId)) {
+        notification = await Notification.findByIdAndUpdate(
+          notificationId,
+          { isRead: true, readAt: new Date() },
+          { new: true }
+        );
+        return notification;
+      }
+
+      // If it's a numeric timestamp (ms since epoch), try matching createdAt
+      const maybeTs = Number(notificationId);
+      if (!Number.isNaN(maybeTs)) {
+        const createdAtDate = new Date(maybeTs);
+        notification = await Notification.findOneAndUpdate(
+          { createdAt: createdAtDate },
+          { isRead: true, readAt: new Date() },
+          { new: true }
+        );
+        return notification;
+      }
+
+      // Fallback: try to find by _id as string (non-standard) or return null
+      notification = await Notification.findOneAndUpdate(
+        { _id: notificationId },
         { isRead: true, readAt: new Date() },
         { new: true }
       );

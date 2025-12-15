@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import toast from 'react-hot-toast';
 import {
   ChevronDown,
   GraduationCap,
@@ -10,6 +11,8 @@ import {
   VenusAndMars,
   X,
   Mars,
+  Briefcase,
+  MoreHorizontal,
 } from 'lucide-react';
 
 function InfoTag({ children }) {
@@ -29,9 +32,14 @@ function SimpleTag({ children }) {
   );
 }
 
-export default function OtherProfileCard({ profile }) {
+export default function OtherProfileCard({ profile, onBlocked }) {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportText, setReportText] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
 
   const photos = useMemo(() => {
     if (!profile) {
@@ -64,7 +72,18 @@ export default function OtherProfileCard({ profile }) {
     relationship: 'Quan hệ nghiêm túc',
   };
   const connectionGoalLabel = connectionGoalLabels[connectionGoal] || (connectionGoal ? connectionGoal : 'Kết nối mới');
-  const hasHeight = Number.isFinite(profile.height) && profile.height > 0;
+  const parseHeight = (val) => {
+    if (val == null) return null;
+    if (typeof val === 'number') {
+      return Number.isFinite(val) && val > 0 ? val : null;
+    }
+    const cleaned = String(val).replace(/[^0-9\-]/g, '');
+    const n = parseInt(cleaned, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const heightValue = parseHeight(profile.height);
+  const hasHeight = heightValue != null;
+  const position = profile.position || profile.occupation || profile.job || profile.title || '';
   const genderLabels = {
     Male: 'Nam',
     Female: 'Nữ',
@@ -207,6 +226,18 @@ export default function OtherProfileCard({ profile }) {
             </>
           )}
         </div>
+        {!isPrimaryPhoto && (
+          <div className="absolute bottom-6 left-1/2 z-30 -translate-x-1/2">
+            <button
+              type="button"
+              onClick={() => setIsExpanded(true)}
+              className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/20 px-6 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white/90 backdrop-blur-sm transition hover:scale-[1.03]"
+            >
+              Xem thêm
+              <ChevronDown className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </article>
 
       {isExpanded && (
@@ -235,10 +266,16 @@ export default function OtherProfileCard({ profile }) {
                     <GraduationCap className="h-4 w-4 text-teal-500" />
                     {profile.major} · {profile.classYear}
                   </span>
+                  {position && (
+                    <span className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-rose-500 shadow-sm">
+                      <Briefcase className="h-4 w-4 text-rose-400" />
+                      {position}
+                    </span>
+                  )}
                   {hasHeight && (
                     <span className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-rose-500 shadow-sm">
                       <Ruler className="h-4 w-4 text-rose-400" />
-                      {profile.height} cm
+                      {heightValue} cm
                     </span>
                   )}
                   {genderLabel && (
@@ -301,6 +338,148 @@ export default function OtherProfileCard({ profile }) {
           </div>
         </div>
       )}
+
+      {showReportModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-rose-950/55 backdrop-blur-sm">
+          <div className="relative w-full max-w-md overflow-hidden rounded-[20px] border border-rose-100 bg-white p-6 shadow-lg">
+            <h3 className="text-lg font-semibold text-slate-900">Báo cáo {profile.name}</h3>
+            <p className="mt-2 text-sm text-slate-600">Vui lòng mô tả lý do bạn báo cáo người này.</p>
+            <textarea
+              value={reportText}
+              onChange={(e) => setReportText(e.target.value)}
+              className="mt-4 h-32 w-full rounded-md border border-rose-100 p-3 text-sm"
+              placeholder="Nội dung báo cáo (không bắt buộc)"
+            />
+
+            <div className="mt-4 flex justify-end gap-3">
+              <button
+                onClick={() => { setShowReportModal(false); setReportText(''); }}
+                className="rounded-full border border-rose-100 bg-white px-4 py-2 text-sm text-rose-600"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    setActionLoading(true);
+                    const API_URL = import.meta.env.VITE_API_URL;
+                    const token = sessionStorage.getItem('accessToken');
+                    const res = await fetch(`${API_URL}/api/users/report/${profile.id}`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                      },
+                      body: JSON.stringify({ reason: reportText }),
+                    });
+                    if (!res.ok) {
+                      const payload = await res.json().catch(() => null);
+                      throw new Error(payload?.message || 'Không thể gửi báo cáo.');
+                    }
+                    toast.success('Báo cáo của bạn đã được gửi.');
+                    setShowReportModal(false);
+                    setReportText('');
+                  } catch (err) {
+                    console.error('report error', err);
+                    toast.error(err.message || 'Không thể gửi báo cáo.');
+                  } finally {
+                    setActionLoading(false);
+                  }
+                }}
+                disabled={actionLoading}
+                className="rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white"
+              >
+                Gửi báo cáo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBlockConfirm && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-rose-950/55 backdrop-blur-sm">
+          <div className="relative w-full max-w-sm overflow-hidden rounded-[20px] border border-rose-100 bg-white p-6 shadow-lg">
+            <h3 className="text-lg font-semibold text-slate-900">Chặn {profile.name}?</h3>
+            <p className="mt-2 text-sm text-slate-600">Người dùng này sẽ bị chặn và bạn sẽ không thấy họ nữa.</p>
+
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={() => setShowBlockConfirm(false)}
+                disabled={actionLoading}
+                className="flex-1 rounded-full border border-rose-100 bg-white px-4 py-2 text-sm text-rose-600"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    setActionLoading(true);
+                    const API_URL = import.meta.env.VITE_API_URL;
+                    const token = sessionStorage.getItem('accessToken');
+                    const res = await fetch(`${API_URL}/api/users/block/${profile.id}`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                      },
+                    });
+                    if (!res.ok) {
+                      const payload = await res.json().catch(() => null);
+                      throw new Error(payload?.message || 'Không thể chặn người dùng.');
+                    }
+                    toast.success('Người dùng đã bị chặn.');
+                    setShowBlockConfirm(false);
+                    if (typeof onBlocked === 'function') onBlocked(profile.id);
+                  } catch (err) {
+                    console.error('block error', err);
+                    toast.error(err.message || 'Không thể chặn người dùng.');
+                  } finally {
+                    setActionLoading(false);
+                  }
+                }}
+                disabled={actionLoading}
+                className="flex-1 rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white"
+              >
+                Chặn và ẩn
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+        <div className="absolute top-4 right-4 z-30">
+          <div className="relative">
+            <button
+              onClick={() => setShowMenu((s) => !s)}
+              aria-label="More options"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white/90 shadow-sm hover:scale-105"
+            >
+              <MoreHorizontal className="h-5 w-5" />
+            </button>
+
+            {showMenu && (
+              <div className="absolute right-0 mt-2 w-44 rounded-lg border border-rose-100 bg-white text-rose-700 shadow-lg">
+                <button
+                  onClick={() => { setShowMenu(false); setShowReportModal(true); }}
+                  disabled={actionLoading}
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-rose-50 disabled:opacity-60"
+                >
+                  Báo cáo người dùng
+                </button>
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    setShowBlockConfirm(true);
+                  }}
+                  disabled={actionLoading}
+                  className="w-full px-4 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-60"
+                >
+                  Chặn người dùng
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
     </>
   );
 }

@@ -81,6 +81,11 @@ export default function Register() {
       sessionStorage.setItem("user", JSON.stringify(userForSession));
       window.dispatchEvent(new Event("userChanged"));
       navigate(userForSession.isProfileComplete ? "/feed" : "/complete-profile");
+      // store accessToken so frontend can call protected APIs
+      if (res.data?.accessToken) {
+        sessionStorage.setItem('accessToken', res.data.accessToken);
+        axios.defaults.headers.common['Authorization'] = `Bearer ${res.data.accessToken}`;
+      }
     } catch (err) {
       console.error("❌ Lỗi khi gửi request:", err);
       const errorMessage =

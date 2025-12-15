@@ -7,6 +7,7 @@ import Match from '../models/Match.js';
 import TemporaryChat from '../models/TemporaryChat.js';
 import Message from '../models/Message.js';
 import User from '../models/User.js';
+import jwt from 'jsonwebtoken';
 
 export const initChatSocket = (io) => {
   const waitingQueue = [];
@@ -20,15 +21,36 @@ export const initChatSocket = (io) => {
 // ==========================================
 // AUTH USER (fix userId undefined)
 // ==========================================
-socket.on("auth_user", ({ userId }) => {
-  if (!userId) {
-    console.log("❌ auth_user received empty userId");
-    return;
-  }
+// socket auth: accept token or legacy userId
+socket.on("auth_user", async ({ token, userId }) => {
+  try {
+    if (token) {
+      let payload;
+      try {
+        payload = jwt.verify(token, process.env.JWT_SECRET);
+      } catch (err) {
+        socket.emit('error', { message: 'Invalid auth token' });
+        return;
+      }
+      const uid = payload.sub;
+      socket.data.userId = uid.toString();
+      socket.join(`user_${uid}`);
+      console.log(`🔐 Authenticated user via token: ${socket.data.userId}`);
+      return;
+    }
 
-  socket.data.userId = userId.toString();
-  socket.join(`user_${userId}`);
-  console.log(`🔐 Authenticated user: ${socket.data.userId}`);
+    // fallback: legacy client sending userId directly (not recommended)
+    if (userId) {
+      socket.data.userId = userId.toString();
+      socket.join(`user_${userId}`);
+      console.log(`⚠️ Authenticated user via userId (legacy): ${socket.data.userId}`);
+      return;
+    }
+
+    console.log("❌ auth_user received empty credentials");
+  } catch (err) {
+    console.error('auth_user handler error', err);
+  }
 });
 
     // ==========================================

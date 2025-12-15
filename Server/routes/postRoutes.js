@@ -5,24 +5,33 @@ import { createNotification } from '../models/Notification.js';
 import User from '../models/User.js';
 import multer from 'multer';
 import { uploadPostImage } from '../services/photo.service.js';
+import { requireAuth } from '../middleware/authMiddleware.js';
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 // ==========================================
 // CREATE POST
 // ==========================================
-router.post('/posts', upload.single('image'), async (req, res) => {
+router.post('/posts', requireAuth, upload.single('image'), async (req, res) => {
   try {
-    // Dữ liệu text (userId, content, privacy) nằm trong req.body
-    const { userId, content, privacy } = req.body;
+    // Dữ liệu text (userId, content, privacy) nằm trong req.body
+    const { content, privacy } = req.body;
+    const userId = req.user?.id || req.body.userId;
     // Dữ liệu file (ảnh) nằm trong req.file
     const imageFile = req.file; 
 
-    if (!content || !userId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required fields: userId or content'
-      });
-    }
+    // Allow posts that have either content or an image, but require a userId
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required field: userId'
+      });
+    }
+    if ((!content || String(content).trim() === '') && !imageFile) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: either content or image is required'
+      });
+    }
 
     let imageUrls = [];
 

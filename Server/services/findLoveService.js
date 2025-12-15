@@ -270,10 +270,23 @@ export const findLoveService = {
 
     const normalizedCurrentUser = buildUserResponse(userDoc);
     
-    // Exclude: matched users + recent left swipes (24h)
+    // Exclude: matched users + recent left swipes (24h) + blocked users
     const matchedIds = await fetchMatchedUserIds(userId);
     const recentDislikeIds = await fetchRecentDislikesUserIds(userId);
-    const excludeIds = [...new Set([...matchedIds, ...recentDislikeIds])];
+
+    // Users this user has blocked (from their document)
+    const blockedByUser = Array.isArray(userDoc.blockedUsers) ? userDoc.blockedUsers.map(String) : [];
+
+    // Users who have blocked this user (they added current user to their blockedUsers)
+    const blockedThisUser = await User.find({ blockedUsers: userId }).distinct('_id').lean().catch(() => []);
+    const blockedThisUserIds = Array.isArray(blockedThisUser) ? blockedThisUser.map(String) : [];
+
+    const excludeIds = [...new Set([...
+      matchedIds,
+      ...recentDislikeIds,
+      ...blockedByUser,
+      ...blockedThisUserIds,
+    ])];
 
     let candidateQuery = buildCandidateQuery(userDoc, excludeIds, { strictProfile: true });
 

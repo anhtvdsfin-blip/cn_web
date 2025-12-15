@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useContext, useMemo, useCallback } from 'react';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 import { X, Plus, Info } from 'lucide-react';
 import { UserContext } from '../contexts';
 
@@ -41,13 +43,43 @@ export default function LibraryInvite() {
   const [createDescription, setCreateDescription] = useState('');
   const [createStart, setCreateStart] = useState('');
   const [createEnd, setCreateEnd] = useState('');
+  // Preferred: combined Date objects for date+time picker
+  const [createStartDT, setCreateStartDT] = useState(null);
+  const [createEndDT, setCreateEndDT] = useState(null);
+  // Fallback split date/time inputs (kept for compatibility)
+  const [createStartDate, setCreateStartDate] = useState('');
+  const [createStartTime, setCreateStartTime] = useState('');
+  const [createEndDate, setCreateEndDate] = useState('');
+  const [createEndTime, setCreateEndTime] = useState('');
   const [createLoading, setCreateLoading] = useState(false);
   const [toast, setToast] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteTargetRoom, setDeleteTargetRoom] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [showCreateError, setShowCreateError] = useState(false);
+  const [createErrorMessage, setCreateErrorMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [detailRoom, setDetailRoom] = useState(null);
 
   const { user: ctxUser } = useContext(UserContext) || {};
+
+  // Helper to build Authorization header and normalize token
+  function getAuthHeaders() {
+    const tokenRaw = sessionStorage.getItem('accessToken');
+    if (!tokenRaw) return {};
+    // strip accidental quotes
+    let token = tokenRaw;
+    if (typeof token === 'string') {
+      token = token.trim();
+      if ((token.startsWith("\"") && token.endsWith("\"")) || (token.startsWith("'") && token.endsWith("'"))) {
+        token = token.slice(1, -1);
+      }
+    }
+    // log for debugging (will show in browser console)
+    try { console.debug('Using accessToken for API calls:', token.slice(0, 8) + '...'); } catch (e) {}
+    return { Authorization: `Bearer ${token}` };
+  }
 
   // Load rooms and invites; include `joined` flag for current user
   useEffect(() => {
@@ -112,7 +144,7 @@ export default function LibraryInvite() {
     try {
       const res = await fetch(`${API_BASE || ''}/api/library/rooms/${roomId}/join`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ userId: ctxUser.id || ctxUser._id }),
       });
       const data = await res.json().catch(() => ({}));
@@ -139,22 +171,42 @@ export default function LibraryInvite() {
 
   const deleteRoom = useCallback(async (roomId) => {
     if (!ctxUser) return alert('Vui lòng đăng nhập.');
-    if (!confirm('Bạn có chắc muốn xóa phòng này?')) return;
     try {
       const res = await fetch(`${API_BASE || ''}/api/library/rooms/${roomId}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ userId: ctxUser.id || ctxUser._id }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return alert(data.message || 'Xóa phòng thất bại');
+      if (!res.ok) {
+        setToast({ msg: data.message || 'Xóa phòng thất bại', type: 'error' });
+        return false;
+      }
       // remove from list
       setRooms((prev) => prev.filter((r) => String(r.id) !== String(roomId)));
+      setToast({ msg: 'Xóa phòng thành công', type: 'success' });
+      return true;
     } catch (err) {
       console.error('Delete room failed:', err);
-      alert('Xóa phòng thất bại. Vui lòng thử lại.');
+      setToast({ msg: 'Xóa phòng thất bại. Vui lòng thử lại.', type: 'error' });
+      return false;
     }
   }, [ctxUser, API_BASE]);
+
+  function openDeleteConfirm(roomId) {
+    setDeleteTargetRoom(roomId);
+    setShowDeleteConfirm(true);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTargetRoom) return;
+    setDeleteLoading(true);
+    const ok = await deleteRoom(deleteTargetRoom);
+    setDeleteLoading(false);
+    setShowDeleteConfirm(false);
+    setDeleteTargetRoom(null);
+    if (ok) closeDetail();
+  }
 
   function openInviteModal(room) {
     setModalRoom(room);
@@ -166,7 +218,7 @@ export default function LibraryInvite() {
     setLoadingMatches(true);
     (async () => {
       try {
-        const res = await fetch(`${API_BASE || ''}/api/match/matched-users/${ctxUser.id || ctxUser._id}`);
+        const res = await fetch(`${API_BASE || ''}/api/match/matched-users/${ctxUser.id || ctxUser._id}`, { headers: { ...getAuthHeaders() } });
         if (res.ok) {
           const data = await res.json();
           setMatchedUsers(data.matchedUsers || []);
@@ -191,6 +243,12 @@ export default function LibraryInvite() {
     setCreateDescription('');
     setCreateStart('');
     setCreateEnd('');
+    setCreateStartDT(null);
+    setCreateEndDT(null);
+    setCreateStartDate('');
+    setCreateStartTime('');
+    setCreateEndDate('');
+    setCreateEndTime('');
     setCreateModalOpen(true);
   }
 
@@ -220,13 +278,32 @@ export default function LibraryInvite() {
     (async () => {
       try {
         const payload = { name, subject, capacity, description: createDescription };
-        if (createStart) payload.startTime = createStart;
-        if (createEnd) payload.endTime = createEnd;
+        // Build ISO timestamps — prefer DatePicker Date objects, fallback to split inputs
+        if (createStartDT) {
+          payload.startTime = createStartDT.toISOString();
+        } else if (createStartDate && createStartTime) {
+          const s = new Date(`${createStartDate}T${createStartTime}`);
+          payload.startTime = s.toISOString();
+        } else if (createStart) {
+          payload.startTime = createStart;
+        }
+
+        if (createEndDT) {
+          payload.endTime = createEndDT.toISOString();
+        } else if (createEndDate && createEndTime) {
+          const e = new Date(`${createEndDate}T${createEndTime}`);
+          payload.endTime = e.toISOString();
+        } else if (createEnd) {
+          payload.endTime = createEnd;
+        }
         if (ctxUser && (ctxUser.id || ctxUser._id)) payload.createdBy = ctxUser.id || ctxUser._id;
+
+        // debug: log payload and token prefix
+        try { console.debug('Creating room payload:', { ...payload, startTime: payload.startTime, endTime: payload.endTime }); } catch (e) {}
 
         const res = await fetch(`${API_BASE || ''}/api/library/rooms`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify(payload),
         });
         if (!res.ok) {
@@ -248,8 +325,10 @@ export default function LibraryInvite() {
           setRooms(list);
         }
       } catch (err) {
-        console.error('Create room API failed:', err);
-        alert('Tạo phòng thất bại. Vui lòng thử lại.');
+          console.error('Create room API failed:', err);
+          const msg = (err && err.message) || 'Tạo phòng thất bại. Vui lòng thử lại.';
+          setCreateErrorMessage(msg);
+          setShowCreateError(true);
       } finally {
         setCreateLoading(false);
         closeCreateModal();
@@ -264,10 +343,17 @@ export default function LibraryInvite() {
     if (!(capacity > 0)) return false;
     // require subject
     if (!createSubject.trim()) return false;
-    // require both start and end, and end > start
-    if (!createStart || !createEnd) return false;
-    const s = new Date(createStart);
-    const e = new Date(createEnd);
+    // require start/end — prefer Date objects from picker, fallback to split inputs
+    let s = null;
+    let e = null;
+    if (createStartDT && createEndDT) {
+      s = createStartDT;
+      e = createEndDT;
+    } else {
+      if (!createStartDate || !createStartTime || !createEndDate || !createEndTime) return false;
+      s = new Date(`${createStartDate}T${createStartTime}`);
+      e = new Date(`${createEndDate}T${createEndTime}`);
+    }
     if (!(e > s)) return false;
     return true;
   })();
@@ -299,7 +385,7 @@ export default function LibraryInvite() {
     try {
       const res = await fetch(`${API_BASE || ''}/api/library/rooms/${modalRoom.id}/invites`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           senderId: ctxUser.id || ctxUser._id,
           receiverId: selectedUserId,
@@ -324,7 +410,7 @@ export default function LibraryInvite() {
     try {
       const res = await fetch(`${API_BASE || ''}/api/library/rooms/${roomId}/invites/${inviteId}/accept`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ userId: ctxUser.id || ctxUser._id }),
       });
       const data = await res.json().catch(() => ({}));
@@ -359,7 +445,7 @@ export default function LibraryInvite() {
     try {
       const res = await fetch(`${API_BASE || ''}/api/library/rooms/${roomId}/invites/${inviteId}/reject`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ userId: ctxUser.id || ctxUser._id }),
       });
       const data = await res.json().catch(() => ({}));
@@ -490,7 +576,7 @@ export default function LibraryInvite() {
                           Mời
                         </button>
                         {ctxUser && room.createdBy && String(room.createdBy) === String(ctxUser.id || ctxUser._id) && (
-                          <button onClick={() => deleteRoom(room.id)} className="rounded-full px-3 py-1 text-sm font-semibold text-rose-600 border border-rose-100 hover:bg-rose-50">Xóa</button>
+                          <button onClick={() => openDeleteConfirm(room.id)} className="rounded-full px-3 py-1 text-sm font-semibold text-rose-600 border border-rose-100 hover:bg-rose-50">Xóa</button>
                         )}
                       </div>
                     </div>
@@ -607,15 +693,37 @@ export default function LibraryInvite() {
                   <input value={createSubject} onChange={(e) => setCreateSubject(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
                 </label>
 
-                <label className="block text-sm">
-                  <span className="text-xs text-slate-500">Thời gian bắt đầu</span>
-                  <input type="datetime-local" value={createStart} onChange={(e) => setCreateStart(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-                </label>
+                <div className="grid gap-3">
+                  <label className="block text-sm">
+                    <span className="text-xs text-slate-500">Chọn thời gian bắt đầu</span>
+                    <div className="mt-2">
+                      <DatePicker
+                        selected={createStartDT}
+                        onChange={(d) => setCreateStartDT(d)}
+                        showTimeSelect
+                        timeIntervals={15}
+                        dateFormat="Pp"
+                        placeholderText="Chọn ngày và giờ"
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </label>
 
-                <label className="block text-sm">
-                  <span className="text-xs text-slate-500">Thời gian kết thúc</span>
-                  <input type="datetime-local" value={createEnd} onChange={(e) => setCreateEnd(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-                </label>
+                  <label className="block text-sm">
+                    <span className="text-xs text-slate-500">Chọn thời gian kết thúc</span>
+                    <div className="mt-2">
+                      <DatePicker
+                        selected={createEndDT}
+                        onChange={(d) => setCreateEndDT(d)}
+                        showTimeSelect
+                        timeIntervals={15}
+                        dateFormat="Pp"
+                        placeholderText="Chọn ngày và giờ"
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </label>
+                </div>
 
                 <label className="block text-sm">
                   <span className="text-xs text-slate-500">Số thành viên</span>
@@ -632,8 +740,8 @@ export default function LibraryInvite() {
                   {!createName.trim() && <div>Vui lòng nhập tên phòng.</div>}
                   {!createSubject.trim() && <div>Vui lòng nhập môn học.</div>}
                   {!(Number(createCapacity) > 0) && <div>Số thành viên phải là số lớn hơn 0.</div>}
-                  {(!createStart || !createEnd) && <div>Vui lòng nhập cả thời gian bắt đầu và thời gian kết thúc.</div>}
-                  {createStart && createEnd && new Date(createEnd) <= new Date(createStart) && <div>Thời gian kết thúc phải lớn hơn thời gian bắt đầu.</div>}
+                  {(!createStartDate || !createStartTime || !createEndDate || !createEndTime) && <div>Vui lòng nhập cả ngày và giờ bắt đầu, kết thúc.</div>}
+                  {createStartDate && createStartTime && createEndDate && createEndTime && new Date(`${createEndDate}T${createEndTime}`) <= new Date(`${createStartDate}T${createStartTime}`) && <div>Thời gian kết thúc phải lớn hơn thời gian bắt đầu.</div>}
                 </div>
               </div>
 
@@ -704,7 +812,39 @@ export default function LibraryInvite() {
               </div>
 
               <div className="mt-4 flex justify-end gap-3">
+                {detailRoom && ctxUser && String(detailRoom.createdBy) === String(ctxUser.id || ctxUser._id) && (
+                  <button onClick={() => openDeleteConfirm(detailRoom.id)} className="rounded-full border border-rose-100 px-4 py-2 text-sm text-rose-600 hover:bg-rose-50">Xóa</button>
+                )}
                 <button onClick={closeDetail} className="rounded-full border border-slate-200 px-4 py-2 text-sm">Đóng</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete confirmation modal */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/40" onClick={() => { if (!deleteLoading) { setShowDeleteConfirm(false); setDeleteTargetRoom(null); } }} />
+            <div className="relative z-10 w-full max-w-sm overflow-hidden rounded-[20px] border border-rose-100 bg-white p-6 shadow-lg">
+              <h3 className="text-lg font-semibold text-slate-900">Bạn có chắc muốn xóa phòng này?</h3>
+              <p className="mt-2 text-sm text-slate-600">Hành động này sẽ xóa phòng và lịch sử lời mời liên quan. Không thể hoàn tác.</p>
+              <div className="mt-4 flex gap-3">
+                <button onClick={() => { setShowDeleteConfirm(false); setDeleteTargetRoom(null); }} disabled={deleteLoading} className="flex-1 rounded-full border border-rose-100 bg-white px-4 py-2 text-sm text-rose-600">Hủy</button>
+                <button onClick={confirmDelete} disabled={deleteLoading} className="flex-1 rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white">{deleteLoading ? 'Đang xóa...' : 'Xóa và ẩn'}</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Create error modal */}
+        {showCreateError && (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setShowCreateError(false)} />
+            <div className="relative z-10 w-full max-w-sm overflow-hidden rounded-[20px] border border-rose-100 bg-white p-6 shadow-lg">
+              <h3 className="text-lg font-semibold text-slate-900">Tạo phòng thất bại</h3>
+              <p className="mt-2 text-sm text-slate-600">{createErrorMessage || 'Không thể tạo phòng. Vui lòng thử lại.'}</p>
+              <div className="mt-4 flex justify-end gap-3">
+                <button onClick={() => setShowCreateError(false)} className="rounded-full border border-slate-200 px-4 py-2 text-sm">Đóng</button>
               </div>
             </div>
           </div>

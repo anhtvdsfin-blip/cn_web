@@ -19,7 +19,10 @@ export default function OpeningMoveOnboarding({ onComplete }) {
     let mounted = true;
     const fetchMoves = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/opening-moves?active=1`, { credentials: 'include' });
+        const headers = {};
+        const token = sessionStorage.getItem('accessToken');
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(`${API_URL}/api/opening-moves?active=1`, { credentials: 'include', headers });
         const payload = await res.json();
         if (!mounted) return;
         if (payload?.data) setMoves(payload.data);
@@ -41,10 +44,13 @@ export default function OpeningMoveOnboarding({ onComplete }) {
     }
     setSaving(true);
     try {
+      const headers = { 'Content-Type': 'application/json' };
+      const token = sessionStorage.getItem('accessToken');
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch(`${API_URL}/api/users/${userId}/opening-move`, {
         method: 'PUT',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ selectedOpeningMove: selected || null }),
       });
       const payload = await res.json();
