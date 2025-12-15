@@ -62,9 +62,9 @@ export const createRoom = async (req, res) => {
 export const listRooms = async (req, res) => {
   try {
     const rooms = await LibraryRoom.find()
-      .populate('occupants', 'name')
-      .populate('createdBy', 'name')
-      .populate('invites.senderId', 'name')
+      .populate('occupants', 'name avatar')
+      .populate('createdBy', 'name avatar')
+      .populate('invites.senderId', 'name avatar')
       .sort({ createdAt: -1 })
       .lean();
     res.json({ success: true, rooms });

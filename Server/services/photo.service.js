@@ -72,3 +72,30 @@ export const uploadPostImage = async (userId, fileBuffer, fileMimetype) => {
     throw error;
   }
 };
+
+export const uploadChatImage = async (userId, fileBuffer, fileMimetype) => {
+  if (!userId || !fileBuffer || fileBuffer.length === 0) {
+    throw new Error('uploadChatImage requires userId and file buffer.');
+  }
+
+  const mimeType = fileMimetype || 'image/jpeg';
+  const base64Payload = fileBuffer.toString('base64');
+  const dataUri = `data:${mimeType};base64,${base64Payload}`;
+
+  try {
+    const uploadResult = await cloudinary.uploader.upload(dataUri, {
+      folder: `HUSTLove/chats/${userId}`,
+      public_id: `chat-${userId}-${Date.now()}`,
+      overwrite: false,
+      resource_type: 'image',
+      transformation: [
+        { width: 1200, height: 1200, crop: 'limit', fetch_format: 'auto', quality: 'auto' }
+      ]
+    });
+
+    return uploadResult.secure_url;
+  } catch (error) {
+    console.error('Failed to upload chat image to Cloudinary:', error);
+    throw error;
+  }
+};

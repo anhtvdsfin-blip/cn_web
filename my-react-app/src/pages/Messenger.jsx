@@ -39,7 +39,19 @@ const MessageItem = memo(function MessageItem({ message }) {
   return (
     <div className={`flex ${alignment} ${shouldAnimate ? 'animate-fadeIn' : ''} [writing-mode:horizontal-tb] [transform:none]`}>
       <div className={`max-w-[78%] rounded-3xl px-4 py-3 text-sm shadow ${bubbleColor}`}>
-        <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        {message.attachment ? (
+          <div className="mb-2">
+            <a href={message.attachment} target="_blank" rel="noreferrer">
+              <img src={message.attachment} alt="sent" className="max-h-[40vh] w-auto rounded-lg object-contain" />
+            </a>
+          </div>
+        ) : null}
+
+        {(!message.content || message.content === '') && message.icon ? (
+          <div className="text-3xl">{message.icon}</div>
+        ) : (
+          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        )}
         <p className={`mt-2 text-[11px] font-medium ${message.isSelf ? 'text-white/70' : 'text-rose-300'}`}>
           {message.formattedTime}
         </p>
@@ -118,7 +130,16 @@ const MessageList = memo(forwardRef(MessageListBase));
 // ============================================
 // MESSAGE INPUT (Memoized)
 // ============================================
-const MessageInput = memo(function MessageInput({ value, onChange, onSend, onTyping }) {
+const MessageInput = memo(function MessageInput({ value, onChange, onSend, onTyping, conversationId }) {
+  const fileRef = useRef(null);
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const emojis = ['😊','😍','😂','😢','😮','🔥','🎉','💖','😉','🤗'];
+  const handleEmojiSelect = useCallback((emoji) => {
+    setPickerOpen(false);
+    onSend({ text: '', icon: emoji });
+  }, [onSend]);
+
   const handleSubmit = useCallback(
     (event) => {
       event.preventDefault();
@@ -149,18 +170,66 @@ const MessageInput = memo(function MessageInput({ value, onChange, onSend, onTyp
     [onSend, value]
   );
 
+  const handleFileChange = useCallback(
+    async (event) => {
+      const file = event.target.files?.[0];
+      if (!file || !conversationId || !API_URL) return;
+
+      const form = new FormData();
+      const stored = sessionStorage.getItem('user');
+      const userObj = stored ? JSON.parse(stored) : null;
+      const userId = userObj?.id;
+      form.append('image', file);
+      if (userId) form.append('userId', userId);
+
+      try {
+        const res = await axios.post(`${API_URL}/api/messages/${conversationId}/upload`, form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        const url = res.data?.url || res.data?.secure_url || null;
+        if (url) {
+          onSend({ text: '', attachment: url });
+        } else {
+          toast.error('Không thể tải ảnh lên, vui lòng thử lại.');
+        }
+      } catch (err) {
+        console.error('Upload chat image failed', err);
+        toast.error('Lỗi khi tải ảnh.');
+      } finally {
+        event.target.value = '';
+      }
+    },
+    [conversationId, onSend]
+  );
+
   return (
     <form onSubmit={handleSubmit} className="rounded-b-[32px] border-t border-white/60 bg-white/80 px-5 py-4">
       <div className="flex items-center gap-3 rounded-full border border-rose-200 bg-white/70 px-4 py-2 shadow-sm shadow-rose-100">
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setPickerOpen((v) => !v)}
+            className="rounded-full p-2 text-rose-300 transition hover:bg-rose-50 hover:text-rose-400"
+            aria-label="Gửi reaction"
+          >
+            <Smile className="h-5 w-5" />
+          </button>
+          {pickerOpen && (
+            <div className="absolute left-0 bottom-full mb-2 z-50 w-40 rounded-lg bg-white p-2 shadow-md">
+              <div className="grid grid-cols-5 gap-2">
+                {emojis.map((e) => (
+                  <button key={e} type="button" onClick={() => handleEmojiSelect(e)} className="rounded p-1 text-lg hover:bg-rose-50">
+                    {e}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
         <button
           type="button"
-          className="rounded-full p-2 text-rose-300 transition hover:bg-rose-50 hover:text-rose-400"
-          aria-label="Gửi reaction"
-        >
-          <Smile className="h-5 w-5" />
-        </button>
-        <button
-          type="button"
+          onClick={() => fileRef.current?.click()}
           className="rounded-full p-2 text-rose-300 transition hover:bg-rose-50 hover:text-rose-400"
           aria-label="Gửi ảnh"
         >
@@ -583,26 +652,42 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
   
 
   const handleSendMessage = useCallback(
-    (text) => {
+    (payload) => {
       if (!socket || !selectedConversation || !user?.id) return;
-      const trimmed = text.trim();
-      if (!trimmed) return;
+
+      let text = '';
+      let attachment = null;
+      let icon = null;
+
+      if (typeof payload === 'string') {
+        text = payload.trim();
+      } else if (payload && typeof payload === 'object') {
+        text = (payload.text || '').trim();
+        attachment = payload.attachment || null;
+        icon = payload.icon || null;
+      }
+
+      if (!text && !attachment && !icon) return;
 
       const now = new Date().toISOString();
       const tempId = `temp-${Date.now()}`;
 
-      const tempMessage = enhanceMessage({ _id: tempId, senderId: user.id, content: trimmed, timestamp: now, createdAt: now }, user.id, true);
+      const tempMessage = enhanceMessage(
+        { _id: tempId, senderId: user.id, content: text || (attachment ? '📷' : ''), attachment, icon, timestamp: now, createdAt: now },
+        user.id,
+        true
+      );
 
       lastMessageMetaRef.current = { id: tempMessage._id, fromSelf: true };
       setMessages((prev) => [...prev, tempMessage]);
 
-      socket.emit('send_message', { conversationId: selectedConversation._id, message: trimmed, senderId: user.id, tempId });
+      socket.emit('send_message', { conversationId: selectedConversation._id, message: text, senderId: user.id, tempId, attachment, icon });
 
       setConversations((prev) =>
         sortConversations(
           prev.map((conversation) =>
             conversation._id === selectedConversation._id
-              ? { ...conversation, lastMessage: { text: trimmed, timestamp: now, formattedTime: tempMessage.formattedTime } }
+              ? { ...conversation, lastMessage: { text: text || (attachment ? '📷 Ảnh' : ''), timestamp: now, formattedTime: tempMessage.formattedTime } }
               : conversation
           )
         )
@@ -678,6 +763,7 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
               setInputValue('');
             }}
             onTyping={handleTyping}
+            conversationId={selectedConversation?._id}
           />
         </>
       ) : (

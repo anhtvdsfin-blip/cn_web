@@ -3,12 +3,18 @@
 
 // routes/conversationRoutes.js
 import express from 'express';
+import multer from 'multer';
 import{
-  getConversations, getMessages, sendMessage } from '../controllers/conversationController.js';
+  getConversations, getMessages, sendMessage, uploadChatImage
+} from '../controllers/conversationController.js';
+
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage() });
+
 router.get('/conversations', getConversations);
 router.get('/messages/:conversationId', getMessages);
 router.post('/messages/:conversationId', sendMessage);
+router.post('/messages/:conversationId/upload', upload.single('image'), uploadChatImage);
 router.get('/conversations/:userId', getConversations);
 
 export default router;

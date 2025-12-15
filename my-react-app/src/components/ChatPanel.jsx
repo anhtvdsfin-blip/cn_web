@@ -204,10 +204,22 @@ export default function ChatPanel({ selectedConversationId, conversations, onCon
   }, [conversations, handleSelectConversation, targetConversationId]);
 
   const handleSendMessage = useCallback(
-    (text) => {
+    (payload) => {
       if (!socket || !selectedConversation || !user?.id) return;
-      const trimmed = text.trim();
-      if (!trimmed) return;
+
+      let text = '';
+      let attachment = null;
+      let icon = null;
+
+      if (typeof payload === 'string') {
+        text = payload.trim();
+      } else if (payload && typeof payload === 'object') {
+        text = (payload.text || '').trim();
+        attachment = payload.attachment || null;
+        icon = payload.icon || null;
+      }
+
+      if (!text && !attachment && !icon) return;
 
       const now = new Date().toISOString();
       const tempId = `temp-${Date.now()}`;
@@ -216,7 +228,9 @@ export default function ChatPanel({ selectedConversationId, conversations, onCon
         {
           _id: tempId,
           senderId: user.id,
-          content: trimmed,
+          content: text || (attachment ? '📷' : ''),
+          attachment,
+          icon,
           timestamp: now,
           createdAt: now,
         },
@@ -229,9 +243,11 @@ export default function ChatPanel({ selectedConversationId, conversations, onCon
 
       socket.emit('send_message', {
         conversationId: selectedConversation._id,
-        message: trimmed,
+        message: text,
         senderId: user.id,
         tempId,
+        attachment,
+        icon,
       });
 
       onConversationsUpdate?.((prev) =>
@@ -241,7 +257,7 @@ export default function ChatPanel({ selectedConversationId, conversations, onCon
               ? {
                   ...conversation,
                   lastMessage: {
-                    text: trimmed,
+                    text: text || (attachment ? '📷 Ảnh' : ''),
                     timestamp: now,
                     formattedTime: tempMessage.formattedTime,
                   },
@@ -404,7 +420,7 @@ export default function ChatPanel({ selectedConversationId, conversations, onCon
           )}
 
           <MessageList ref={messagesRef} messages={messages} isTyping={isTyping} onScroll={handleMessagesScroll} conversation={selectedConversation} onUseOpeningMove={handleUseOpeningMove} />
-          <MessageInput value={inputValue} onChange={handleInputChange} onSend={handleSendFromInput} onTyping={handleTyping} />
+          <MessageInput value={inputValue} onChange={handleInputChange} onSend={handleSendFromInput} onTyping={handleTyping} conversationId={selectedConversation._id} />
         </>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center text-rose-300">

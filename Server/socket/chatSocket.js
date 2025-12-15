@@ -336,7 +336,19 @@ socket.on("auth_user", ({ userId }) => {
     // ==========================================
     // 4. GỬI TIN NHẮN VĨNH VIỄN (SAU KHI MATCH)
     // ==========================================
-    socket.on("send_message", async ({ conversationId, message, tempId, senderId }) => {
+    socket.on("send_message", async (payload) => {
+      // payload may be { conversationId, message, tempId, senderId, attachment, icon }
+      const { conversationId, tempId, senderId } = payload || {};
+      let message = payload?.message;
+
+      // If attachment/icon provided at top-level, and message is a string, normalize to object
+      if ((payload?.attachment || payload?.icon) && (typeof message === 'string' || !message)) {
+        message = {
+          content: typeof message === 'string' ? message : (message?.content || ''),
+          attachment: payload.attachment,
+          icon: payload.icon
+        };
+      }
       try {
         console.log(`📨 Received send_message: conversationId=${conversationId}, senderId=${senderId}, message=${message}`);
 
@@ -365,21 +377,25 @@ socket.on("auth_user", ({ userId }) => {
           return;
         }
 
-        // Create new message in Message collection
-        const newMessage = await Message.create({
+        // Accept optional attachment/icon from message object
+        const { attachment, icon } = message || {};
+        const content = typeof message === 'string' ? message : (message?.content || '');
+        const savedMessage = await Message.create({
           chatRoomId: conversationId,
           senderId: userId,
-          content: message,
-          type: 'text',
+          content: content || '',
+          attachment: attachment || null,
+          icon: icon || null,
+          type: attachment ? 'image' : (icon ? 'emoji' : 'text'),
           status: 'sent',
           timestamp: new Date()
         });
 
-        console.log(`✅ Message saved: ${newMessage._id}`);
+        console.log(`✅ Message saved: ${savedMessage._id}`);
 
-        // Update lastMessage in Match
+        // Update lastMessage in Match (store text preview)
         match.lastMessage = {
-          text: message,
+          text: attachment ? (content || '📷 Ảnh') : (icon ? `${icon} ${content || ''}` : content),
           senderId: userId,
           timestamp: new Date()
         };
@@ -408,11 +424,14 @@ socket.on("auth_user", ({ userId }) => {
         const payload = {
           conversationId,
           message: {
-            _id: newMessage._id,
-            senderId: newMessage.senderId,
+            _id: savedMessage._id,
+            senderId: savedMessage.senderId,
             senderName,
-            content: newMessage.content,
-            timestamp: newMessage.timestamp,
+            content: savedMessage.content,
+            attachment: savedMessage.attachment,
+            icon: savedMessage.icon,
+            type: savedMessage.type,
+            timestamp: savedMessage.timestamp,
             tempId
           }
         };

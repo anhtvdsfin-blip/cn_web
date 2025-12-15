@@ -15,10 +15,20 @@ const messageSchema = new mongoose.Schema({
     index: true
   },
 
-  // Content
+  // Content (optional for image/emoji messages)
   content: {
     type: String,
-    required: true
+    default: ''
+  },
+  // Single attachment URL (chat photo)
+  attachment: {
+    type: String,
+    default: null
+  },
+  // Optional icon/emoji associated with the message
+  icon: {
+    type: String,
+    default: null
   },
   
   // Type: text, image, file, emoji

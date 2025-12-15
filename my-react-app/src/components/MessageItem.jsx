@@ -12,29 +12,36 @@ const MessageItem = memo(function MessageItem({ message, isLastMessage }) {
 
   return (
     <div className={`flex ${alignment} ${shouldAnimate ? 'animate-fadeIn' : ''}`}>
-      <div className={`max-w-[78%] rounded-3xl px-4 py-3 text-sm shadow ${bubbleColor} break-words`}
-           style={{ wordBreak: 'break-word' }}>
-        <div className="max-h-[30vh] overflow-auto">
-          <p className="whitespace-pre-wrap break-words">{preview}</p>
-        </div>
+      <div className={`max-w-[78%] rounded-3xl px-4 py-3 text-sm shadow ${bubbleColor} break-words`} style={{ wordBreak: 'break-word' }}>
+        {/* Attachment (image) */}
+        {message.attachment ? (
+          <div className="mb-2">
+            <a href={message.attachment} target="_blank" rel="noreferrer">
+              <img src={message.attachment} alt="sent" className="max-h-[40vh] w-auto rounded-lg object-contain" />
+            </a>
+          </div>
+        ) : null}
+
+        {/* Emoji-only message */}
+        {(!message.content || message.content === '') && message.icon ? (
+          <div className="text-3xl">{message.icon}</div>
+        ) : (
+          <div className="max-h-[30vh] overflow-auto">
+            <p className="whitespace-pre-wrap break-words">{preview}</p>
+          </div>
+        )}
+
         {isLong && !expanded && (
-          <button
-            type="button"
-            onClick={() => setExpanded(true)}
-            className="mt-2 text-xs font-medium text-rose-400 underline"
-          >
+          <button type="button" onClick={() => setExpanded(true)} className="mt-2 text-xs font-medium text-rose-400 underline">
             Xem thêm
           </button>
         )}
         {isLong && expanded && (
-          <button
-            type="button"
-            onClick={() => setExpanded(false)}
-            className="mt-2 text-xs font-medium text-rose-400 underline"
-          >
+          <button type="button" onClick={() => setExpanded(false)} className="mt-2 text-xs font-medium text-rose-400 underline">
             Ẩn bớt
           </button>
         )}
+
         <p className={`mt-2 text-[11px] font-medium ${message.isSelf ? 'text-white/70' : 'text-rose-300'}`}>
           {message.formattedTime}
         </p>

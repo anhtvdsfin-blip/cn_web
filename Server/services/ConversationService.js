@@ -80,7 +80,7 @@ class ConversationService {
   }
 
   // Send a message
-  async sendMessage(matchId, senderId, content) {
+  async sendMessage(matchId, senderId, content, opts = {}) {
     try {
       const match = await Match.findById(matchId);
 
@@ -96,19 +96,25 @@ class ConversationService {
         return { success: false, error: 'Unauthorized' };
       }
 
+      // Determine message type
+      const { attachment = null, icon = null } = opts || {};
+      const type = attachment ? 'image' : (icon ? 'emoji' : 'text');
+
       // Create message in Message collection
       const newMessage = await Message.create({
         chatRoomId: matchId,
         senderId,
-        content,
-        type: 'text',
+        content: content || '',
+        attachment: attachment || null,
+        icon: icon || null,
+        type,
         status: 'sent',
         timestamp: new Date()
       });
 
       // Update last message in Match
       match.lastMessage = {
-        text: content,
+        text: attachment ? (content || '📷 Ảnh') : (icon ? `${icon} ${content || ''}` : content),
         senderId,
         timestamp: new Date()
       };
@@ -130,6 +136,9 @@ class ConversationService {
           _id: newMessage._id,
           senderId: newMessage.senderId,
           content: newMessage.content,
+          attachment: newMessage.attachment,
+          icon: newMessage.icon,
+          type: newMessage.type,
           timestamp: newMessage.timestamp,
           status: newMessage.status
         }

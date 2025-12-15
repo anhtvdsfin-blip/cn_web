@@ -541,7 +541,7 @@ export default function LibraryInvite() {
         {modalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="absolute inset-0 bg-black/40" onClick={closeInviteModal} />
-            <div className="relative z-10 w-full max-w-md rounded-2xl bg-white p-6 shadow-lg">
+            <div className="relative z-10 w-full max-w-md rounded-3xl bg-white p-6 shadow-lg backdrop-blur-sm">
               <div className="flex items-start justify-between">
                 <div>
                   <h3 className="text-lg font-semibold text-slate-800">Mời vào {modalRoom?.name}</h3>
@@ -661,21 +661,44 @@ export default function LibraryInvite() {
 
               <div className="mt-4 space-y-3 text-sm text-slate-600">
                 {detailRoom.startTime && (
-                  <div><strong>Thời gian:</strong> {new Date(detailRoom.startTime).toLocaleString()}{detailRoom.endTime ? ` — ${new Date(detailRoom.endTime).toLocaleString()}` : ''}</div>
+                  <div><strong className="text-slate-800">Thời gian:</strong> <span className="text-teal-600 font-medium">{new Date(detailRoom.startTime).toLocaleString()}{detailRoom.endTime ? ` — ${new Date(detailRoom.endTime).toLocaleString()}` : ''}</span></div>
                 )}
-                {detailRoom.subject && <div><strong>Môn học:</strong> {detailRoom.subject}</div>}
-                <div><strong>Mô tả:</strong> {detailRoom.description || '—'}</div>
-                <div><strong>Số lượng thành viên:</strong> {detailRoom.capacity}</div>
+                {detailRoom.subject && <div><strong className="text-slate-800">Môn học:</strong> <span className="text-teal-600 font-medium">{detailRoom.subject}</span></div>}
+                <div><strong className="text-slate-800">Mô tả:</strong> <div className="mt-1 text-slate-600">{detailRoom.description || '—'}</div></div>
+                <div><strong className="text-slate-800">Số lượng thành viên:</strong> <span className="ml-1 text-slate-700">{detailRoom.capacity}</span></div>
                 <div>
-                  <strong>Đang tham gia:</strong>
+                  <strong className="text-slate-800">Đang tham gia:</strong>
                   {detailRoom.occupantNames && detailRoom.occupantNames.length > 0 ? (
-                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                      {detailRoom.occupantNames.map((n, i) => (
-                        <div key={i} className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">{n}</div>
-                      ))}
+                    <div className="mt-3">
+                      <div className="flex flex-row flex-wrap items-start gap-6">
+                        {detailRoom.occupantNames.map((n, i) => {
+                          const avatar = (detailRoom.occupantAvatars && detailRoom.occupantAvatars[i]) || (detailRoom.occupants && extractAvatar(detailRoom.occupants[i])) || null;
+                          const initials = (n || '').split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase();
+                          // determine occupant id to check creator
+                          const occ = detailRoom.occupants && detailRoom.occupants[i];
+                          const occId = occ && (occ._id || occ.id || occ.toString());
+                          const creatorId = detailRoom.createdBy && (detailRoom.createdBy._id || detailRoom.createdBy.id || detailRoom.createdBy.toString());
+                          const isCreator = creatorId && occId && String(creatorId) === String(occId);
+                          return (
+                            <div key={i} className="flex flex-col items-center w-28">
+                              <div className="relative">
+                                {avatar ? (
+                                  <img src={avatar} alt={n} title={n} className={`h-20 w-20 rounded-full object-cover ring-2 ring-white shadow-sm ${isCreator ? 'border-2 border-rose-300' : ''}`} />
+                                ) : (
+                                  <div title={n} className={`h-20 w-20 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center text-base font-semibold ${isCreator ? 'ring-2 ring-rose-200' : ''}`}>{initials}</div>
+                                )}
+                                {isCreator && (
+                                  <span className="absolute -top-1 -right-1 bg-rose-50 text-rose-600 rounded-full p-1 text-xs" title="Người tạo">👑</span>
+                                )}
+                              </div>
+                              <div className="mt-2 text-sm text-slate-700 text-center break-words w-full">{n}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   ) : (
-                    <span className="ml-2">{detailRoom.occupants.length}</span>
+                    <span className="ml-2">{detailRoom.occupants ? detailRoom.occupants.length : 0}</span>
                   )}
                 </div>
               </div>
