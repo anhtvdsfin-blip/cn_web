@@ -2,6 +2,7 @@ import LibraryRoom from '../models/LibraryRoom.js';
 import User from '../models/User.js';
 import { notificationService } from '../services/NotificationService.js';
 import { emitNotification } from '../socket/notificationSocket.js';
+import { Notification } from '../models/Notification.js';
 
 export const createRoom = async (req, res) => {
   try {
@@ -24,6 +25,33 @@ export const createRoom = async (req, res) => {
     const room = new LibraryRoom(roomData);
 
     await room.save();
+    // Create a confirmation notification for the creator and emit it
+    try {
+        if (createdBy) {
+        const creator = await User.findById(createdBy).select('name');
+        const notif = await notificationService.createNotification({
+          recipientId: createdBy,
+          senderId: createdBy,
+          type: 'library_room_created',
+          content: `${creator?.name || 'Bạn'} đã tạo phòng ${room.name}`,
+          isRead: false,
+          roomId: room._id
+        });
+
+        const populatedNotif = await Notification.findById(notif._id)
+          .populate('senderId', 'name avatar')
+          .populate('roomId', 'name')
+          .lean();
+
+        if (req.io) {
+          try { emitNotification(req.io, createdBy, populatedNotif); } catch (e) { console.warn('emitNotification failed', e); }
+          try { req.emitNotification?.(createdBy, populatedNotif); } catch (e) { console.warn('req.emitNotification failed', e); }
+        }
+      }
+    } catch (err) {
+      console.error('❌ Failed to create/emit notification for room create:', err);
+    }
+
     res.status(201).json({ success: true, room });
   } catch (err) {
     console.error('❌ Failed to create room:', err);
@@ -107,12 +135,16 @@ export const createInviteForRoom = async (req, res) => {
         roomId: room._id
       });
 
+      // populate notification before emitting so frontend has sender and room info
+      const populatedNotif = await Notification.findById(notif._id)
+        .populate('senderId', 'name avatar')
+        .populate('roomId', 'name')
+        .lean();
+
       // emit via both notification socket namespace and legacy post socket room (if available)
       if (req.io) {
-        // new notification socket (emits 'new_notification' to notifications_<userId>)
-        try { emitNotification(req.io, receiverId, notif); } catch (e) { console.warn('emitNotification failed', e); }
-        // legacy emit to user room used by postSocket (emits 'notification:new')
-        try { req.emitNotification?.(receiverId, notif); } catch (e) { console.warn('req.emitNotification failed', e); }
+        try { emitNotification(req.io, receiverId, populatedNotif); } catch (e) { console.warn('emitNotification failed', e); }
+        try { req.emitNotification?.(receiverId, populatedNotif); } catch (e) { console.warn('req.emitNotification failed', e); }
       }
     } catch (err) {
       console.error('❌ Failed to create/emit notification for invite:', err);
@@ -149,7 +181,76 @@ export const joinRoom = async (req, res) => {
     room.occupants.push(userId);
     await room.save();
 
-    res.json({ success: true, room });
+    // Re-fetch populated room so frontend receives occupant names (not just ObjectIds)
+    let populatedRoom = await LibraryRoom.findById(id)
+      .populate('occupants', 'name avatar')
+      .populate('createdBy', 'name')
+      .populate('invites.senderId', 'name');
+
+    // Notify room creator that someone joined
+    try {
+      const creatorId = populatedRoom.createdBy ? populatedRoom.createdBy._id?.toString() || populatedRoom.createdBy.toString() : null;
+      if (creatorId && String(creatorId) !== String(userId)) {
+        const joiningUser = await User.findById(userId).select('name');
+        const notif = await notificationService.createNotification({
+          recipientId: creatorId,
+          senderId: userId,
+          type: 'library_user_joined',
+          content: `${joiningUser?.name || 'Ai đó'} đã vào phòng ${populatedRoom.name}`,
+          isRead: false,
+          roomId: populatedRoom._id
+        });
+
+        const populatedNotifForCreator = await Notification.findById(notif._id)
+          .populate('senderId', 'name avatar')
+          .populate('roomId', 'name')
+          .lean();
+
+        if (req.io) {
+          try { emitNotification(req.io, creatorId, populatedNotifForCreator); } catch (e) { console.warn('emitNotification failed', e); }
+          try { req.emitNotification?.(creatorId, populatedNotifForCreator); } catch (e) { console.warn('req.emitNotification failed', e); }
+        }
+      }
+    } catch (err) {
+      console.error('❌ Failed to create/emit notification for join:', err);
+    }
+
+    // Also create a confirmation notification for the joining user listing other members
+    try {
+      const joiningUser = await User.findById(userId).select('name');
+      const memberNames = (populatedRoom.occupants || [])
+        .map((o) => (o && (o.name || (o._id || o.toString()))) )
+        .filter(n => n && n !== joiningUser?.name);
+
+      const contentForJoin = memberNames.length > 0
+        ? `Bạn đã vào phòng ${populatedRoom.name} cùng với: ${memberNames.slice(0, 8).join(', ')}${memberNames.length > 8 ? `, +${memberNames.length - 8} khác` : ''}`
+        : `Bạn đã vào phòng ${populatedRoom.name}`;
+
+      // Use room creator as sender if available, otherwise use joiningUser as sender (createNotification will return null if sender==recipient)
+      const senderForJoin = populatedRoom.createdBy ? (populatedRoom.createdBy._id || populatedRoom.createdBy) : null;
+
+      if (String(senderForJoin) === String(userId)) {
+        // pick a different sender if equal (e.g., system user) — fallback to creator or skip sender
+      }
+
+      const joinNotif = await notificationService.createNotification({
+        recipientId: userId,
+        senderId: senderForJoin || userId, // notificationService.createNotification prevents same-sender notifications
+        type: 'library_user_joined',
+        content: contentForJoin,
+        isRead: false,
+        roomId: populatedRoom._id
+      });
+
+      if (joinNotif && req.io) {
+        try { emitNotification(req.io, userId, joinNotif); } catch (e) { console.warn('emitNotification failed for join user', e); }
+        try { req.emitNotification?.(userId, joinNotif); } catch (e) { console.warn('req.emitNotification failed for join user', e); }
+      }
+    } catch (err) {
+      console.error('❌ Failed to create/emit confirmation notification for joining user:', err);
+    }
+
+    res.json({ success: true, room: populatedRoom });
   } catch (err) {
     console.error('❌ Failed to join room:', err);
     res.status(500).json({ success: false, message: 'Lỗi server khi tham gia phòng.' });
@@ -235,9 +336,14 @@ export const acceptInvite = async (req, res) => {
         roomId: room._id
       });
 
+      const populatedNotifForSender = await Notification.findById(notif._id)
+        .populate('senderId', 'name avatar')
+        .populate('roomId', 'name')
+        .lean();
+
       if (req.io) {
-        try { emitNotification(req.io, senderIdFromInvite, notif); } catch (e) { console.warn('emitNotification failed', e); }
-        try { req.emitNotification?.(senderIdFromInvite, notif); } catch (e) { console.warn('req.emitNotification failed', e); }
+        try { emitNotification(req.io, senderIdFromInvite, populatedNotifForSender); } catch (e) { console.warn('emitNotification failed', e); }
+        try { req.emitNotification?.(senderIdFromInvite, populatedNotifForSender); } catch (e) { console.warn('req.emitNotification failed', e); }
       }
     } catch (err) {
       console.error('❌ Failed to create/emit notification for accept:', err);

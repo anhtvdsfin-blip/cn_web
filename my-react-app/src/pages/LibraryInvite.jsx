@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useContext } from 'react';
 import { X, Plus, Info } from 'lucide-react';
 import { UserContext } from '../contexts';
-import Navbar from '../components/Navbar';
 
 export default function LibraryInvite() {
   const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
@@ -33,19 +32,20 @@ export default function LibraryInvite() {
         if (res.ok) {
           const json = await res.json();
           const list = (json.rooms || []).map((r) => {
-            const occupants = (r.occupants || []).map((o) => (o && (o._id || o.toString())) || String(o));
+            const occupantIds = (r.occupants || []).map((o) => (o && (o._id || o.toString())) || String(o));
+            const occupantNames = (r.occupants || []).map((o) => (o && o.name) || (typeof o === 'string' ? o : ''));
             const id = r._id || r.id || String(r._id || Date.now());
-            const joined = ctxUser ? occupants.includes(String(ctxUser.id || ctxUser._id || ctxUser._id)) : false;
+            const joined = ctxUser ? occupantIds.includes(String(ctxUser.id || ctxUser._id || ctxUser._id)) : false;
             const createdBy = r.createdBy ? (r.createdBy._id || r.createdBy).toString() : null;
-            
+
             // Collect pending invites for current user as recipient
             const userInvites = (r.invites || [])
               .filter((inv) => inv.receiverId && String(inv.receiverId) === String(ctxUser?.id || ctxUser?._id))
               .filter((inv) => inv.status === 'pending')
               .map((inv) => ({ ...inv, roomId: id }));
-            
+
             setInvites((prev) => [...prev, ...userInvites]);
-            return { ...r, id, occupants, joined, createdBy, startTime: r.startTime, endTime: r.endTime };
+            return { ...r, id, occupants: occupantIds, occupantNames, joined, createdBy, startTime: r.startTime, endTime: r.endTime };
           });
           setRooms(list);
         } else {
@@ -74,10 +74,11 @@ export default function LibraryInvite() {
 
       // server returns updated room; normalize and update state
       const r = data.room;
-      const occupants = (r.occupants || []).map((o) => (o && (o._id || o.toString())) || String(o));
+      const occupantIds = (r.occupants || []).map((o) => (o && (o._id || o.toString())) || String(o));
+      const occupantNames = (r.occupants || []).map((o) => (o && o.name) || (typeof o === 'string' ? o : ''));
       const id = r._id || r.id || roomId;
-      const joined = occupants.includes(String(ctxUser.id || ctxUser._id));
-      const normalized = { ...r, id, occupants, joined };
+      const joined = occupantIds.includes(String(ctxUser.id || ctxUser._id));
+      const normalized = { ...r, id, occupants: occupantIds, occupantNames, joined };
 
       setRooms((prev) => prev.map((it) => (String(it.id) === String(id) ? normalized : it)));
     } catch (err) {
@@ -181,10 +182,11 @@ export default function LibraryInvite() {
         if (listRes.ok) {
           const listJson = await listRes.json();
           const list = (listJson.rooms || []).map((r) => {
-            const occupants = (r.occupants || []).map((o) => (o && (o._id || o.toString())) || String(o));
+            const occupantIds = (r.occupants || []).map((o) => (o && (o._id || o.toString())) || String(o));
+            const occupantNames = (r.occupants || []).map((o) => (o && o.name) || (typeof o === 'string' ? o : ''));
             const id = r._id || r.id || String(r._id || Date.now());
-            const joined = ctxUser ? occupants.includes(String(ctxUser.id || ctxUser._id || ctxUser._id)) : false;
-            return { ...r, id, occupants, joined };
+            const joined = ctxUser ? occupantIds.includes(String(ctxUser.id || ctxUser._id || ctxUser._id)) : false;
+            return { ...r, id, occupants: occupantIds, occupantNames, joined };
           });
           setRooms(list);
         }
@@ -268,17 +270,18 @@ export default function LibraryInvite() {
 
       // On success, refresh rooms list to update occupants
       const listRes = await fetch(`${API_BASE || ''}/api/library/rooms`);
-      if (listRes.ok) {
-        const listJson = await listRes.json();
-        const list = (listJson.rooms || []).map((r) => {
-          const occupants = (r.occupants || []).map((o) => (o && (o._id || o.toString())) || String(o));
-          const id = r._id || r.id || String(r._id || Date.now());
-          const joined = ctxUser ? occupants.includes(String(ctxUser.id || ctxUser._id || ctxUser._id)) : false;
-          const createdBy = r.createdBy ? (r.createdBy._id || r.createdBy).toString() : null;
-          return { ...r, id, occupants, joined, createdBy, startTime: r.startTime, endTime: r.endTime };
-        });
-        setRooms(list);
-      }
+        if (listRes.ok) {
+          const listJson = await listRes.json();
+          const list = (listJson.rooms || []).map((r) => {
+            const occupantIds = (r.occupants || []).map((o) => (o && (o._id || o.toString())) || String(o));
+            const occupantNames = (r.occupants || []).map((o) => (o && o.name) || (typeof o === 'string' ? o : ''));
+            const id = r._id || r.id || String(r._id || Date.now());
+            const joined = ctxUser ? occupantIds.includes(String(ctxUser.id || ctxUser._id || ctxUser._id)) : false;
+            const createdBy = r.createdBy ? (r.createdBy._id || r.createdBy).toString() : null;
+            return { ...r, id, occupants: occupantIds, occupantNames, joined, createdBy, startTime: r.startTime, endTime: r.endTime };
+          });
+          setRooms(list);
+        }
 
       // Remove the accepted invite from display
       setInvites((s) => s.filter((inv) => !(inv.roomId === roomId && inv._id === inviteId)));
@@ -311,7 +314,6 @@ export default function LibraryInvite() {
 
   return (
     <div className="min-h-screen bg-[#fff8fb] pt-16">
-      <Navbar />
       <div className="mx-auto w-full max-w-6xl px-4 py-16">
 
         <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
@@ -358,6 +360,19 @@ export default function LibraryInvite() {
                         <div className="text-xs text-slate-500">{room.occupants.length}/{room.capacity}</div>
                       </div>
                       <div className="mt-1 text-xs text-slate-500">{room.description}</div>
+                      {room.occupantNames && room.occupantNames.length > 0 && (
+                        <div className="mt-2">
+                          <div className="text-xs text-slate-500 mb-1">Thành viên:</div>
+                          <div className="grid grid-cols-3 gap-1">
+                            {room.occupantNames.slice(0, 6).map((n, idx) => (
+                              <div key={idx} className="truncate rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">{n}</div>
+                            ))}
+                            {room.occupantNames.length > 6 && (
+                              <div className="truncate rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">+{room.occupantNames.length - 6}</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                       {room.startTime && (
                         <div className="mt-1 text-xs text-slate-500">Thời gian: {new Date(room.startTime).toLocaleString()}{room.endTime ? ` — ${new Date(room.endTime).toLocaleString()}` : ''}</div>
                       )}
@@ -560,7 +575,18 @@ export default function LibraryInvite() {
                 {detailRoom.subject && <div><strong>Môn học:</strong> {detailRoom.subject}</div>}
                 <div><strong>Mô tả:</strong> {detailRoom.description || '—'}</div>
                 <div><strong>Số lượng thành viên:</strong> {detailRoom.capacity}</div>
-                <div><strong>Đang tham gia:</strong> {detailRoom.occupants.length}</div>
+                <div>
+                  <strong>Đang tham gia:</strong>
+                  {detailRoom.occupantNames && detailRoom.occupantNames.length > 0 ? (
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {detailRoom.occupantNames.map((n, i) => (
+                        <div key={i} className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">{n}</div>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="ml-2">{detailRoom.occupants.length}</span>
+                  )}
+                </div>
               </div>
 
               <div className="mt-4 flex justify-end gap-3">

@@ -24,7 +24,12 @@ const notificationSchema = new mongoose.Schema({
       'like_comment',   // Like comment
       'mention',        // Tag trong bài viết/comment
       'follow',         // Follow user
-      'message'         // Tin nhắn mới
+      'message',        // Tin nhắn mới
+      // Library-related notifications
+      'library_room_created',
+      'library_invite',
+      'library_invite_accepted',
+      'library_user_joined'
     ],
     required: true
   },
@@ -43,6 +48,12 @@ const notificationSchema = new mongoose.Schema({
   conversationId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Conversation'
+  },
+
+  // Library room reference for library-related notifications
+  roomId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'LibraryRoom'
   },
   
   // Match ID reference

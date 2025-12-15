@@ -36,6 +36,19 @@ export default function NotificationPanel({ isOpen, onClose }) {
     if (notification.type === 'match' && notification.matchId) {
       onClose?.();
       navigate(`/messenger?matchId=${notification.matchId._id || notification.matchId}`);
+      return;
+    }
+
+    // If library-related notification, navigate to library page and optionally to room
+    if (notification.type && notification.type.startsWith('library')) {
+      onClose?.();
+      const roomId = notification.roomId?._id || notification.roomId;
+      if (roomId) {
+        navigate(`/library-invite?roomId=${roomId}`);
+      } else {
+        navigate('/library-invite');
+      }
+      return;
     }
   };
 

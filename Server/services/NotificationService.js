@@ -73,6 +73,7 @@ export const notificationService = {
 
       const notifications = await Notification.find(query)
         .populate('senderId', 'name avatar')
+        .populate('roomId', 'name')
         .populate({
           path: 'matchId',
           select: 'user1Id user2Id openingMoveUser1 openingMoveUser2',
