@@ -179,12 +179,15 @@ router.post('/posts/:postId/like', async (req, res) => {
 
     if (result.action === 'like') {
       const user = await User.findById(userId);
+
+      const senderName = user?.name || 'Ai đó';
+      const notificationContent = `${senderName} đã thích bài viết của bạn`;
       await createNotification({
         recipientId: post.userId,
         senderId: userId,
         type: 'like',
         postId: post._id,
-        content: 'đã thích bài viết của bạn'
+        content: notificationContent
       });
 
       if (req.emitNotification && post.userId.toString() !== userId) {
@@ -192,9 +195,9 @@ router.post('/posts/:postId/like', async (req, res) => {
           type: 'like',
           recipientId: post.userId,
           senderId: userId,
-          senderName: user?.name || 'Ai đó',
+          senderName: senderName,
           postId,
-          content: `đã thích bài viết của bạn`,
+          content: notificationContent,
           timestamp: new Date()
         });
       }
@@ -399,25 +402,42 @@ router.post('/posts/:postId/comments', async (req, res) => {
         });
 
         if (req.emitNotification && parentComment.userId.toString() !== userId) {
+          const senderName = user?.name || 'Ai đó';
+            const notificationContent = `${senderName} đã trả lời bình luận của bạn`;
+            
+            await createNotification({
+              recipientId: parentComment.userId,
+              senderId: userId,
+              type: 'reply',
+              postId: post._id,
+              commentId: comment._id,
+              // ✅ SỬ DỤNG NỘI DUNG MỚI
+              content: notificationContent 
+            });
+
           req.emitNotification(parentComment.userId.toString(), {
-            type: 'reply',
-            recipientId: parentComment.userId,
-            senderId: userId,
-            senderName: user?.name || 'Ai đó',
-            postId,
-            content: `đã trả lời bình luận của bạn`,
-            timestamp: new Date()
+              type: 'reply',
+              recipientId: parentComment.userId,
+              senderId: userId,
+              senderName: senderName,
+              postId,
+              // ✅ SỬ DỤNG NỘI DUNG MỚI
+              content: notificationContent,
+              timestamp: new Date()
           });
         }
       }
     } else {
+      const senderName = user?.name || 'Ai đó';
+       const notificationContent = `${senderName} đã bình luận về bài viết của bạn`;
+
       await createNotification({
         recipientId: post.userId,
         senderId: userId,
         type: 'comment',
         postId: post._id,
         commentId: comment._id,
-        content: 'đã bình luận về bài viết của bạn'
+        content: notificationContent
       });
 
       if (req.emitNotification && post.userId.toString() !== userId) {
@@ -425,9 +445,9 @@ router.post('/posts/:postId/comments', async (req, res) => {
           type: 'comment',
           recipientId: post.userId,
           senderId: userId,
-          senderName: user?.name || 'Ai đó',
+          senderName: senderName,
           postId,
-          content: `đã bình luận về bài viết của bạn`,
+          content: notificationContent,
           timestamp: new Date()
         });
       }
