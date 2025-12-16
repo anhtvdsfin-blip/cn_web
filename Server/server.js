@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { createServer } from "http";
 import { Server } from "socket.io";
 import path from "path";
@@ -26,6 +28,29 @@ import { initPostSocket } from './socket/postSocket.js';
 dotenv.config();
 
 const app = express();
+
+// Security: set various HTTP headers
+app.use(helmet());
+
+// Rate limiters
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 400, // limit each IP to 400 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+// Apply general rate limiter to all requests
+app.use(generalLimiter);
+
+// Strict limiter for auth endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // limit each IP to 20 requests per windowMs
+  message: { success: false, message: 'Too many requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
 const httpServer = createServer(app);
 
 const allowedOrigins = [
@@ -95,7 +120,8 @@ app.use((req, res, next) => {
 });
 
 // API Routes
-app.use("/api/auth", authRoutes);
+// Apply strict rate limiter to auth routes
+app.use("/api/auth", authLimiter, authRoutes);
 app.use('/api/users', userRoutes);
 app.use("/api/match", matchRoutes);  // NEW
 app.use('/api/findlove', findLoveRoutes);
