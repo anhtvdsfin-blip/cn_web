@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import httpStatus from 'http-status';
 import User from '../models/User.js';
-import Token from '../models/token.js';
+import Token from '../models/Token.js';
 import { buildUserResponse, normalizeGender } from './UserService.js';
 
 // HASH MẬT KHẨU
