@@ -162,12 +162,9 @@ initChatSocket(io);
 initPostSocket(io);
 initNotificationSocket(io);
 
-// Health check
-app.get("/", (req, res) => {
-  res.send("🚀 LoveConnect server đang chạy!");
-});
 
-app.get("/health", (req, res) => {
+
+app.get("/api/health", (req, res) => {
   const stats = matchingService.getStats();
   res.json({
     status: "ok",
