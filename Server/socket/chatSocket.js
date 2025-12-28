@@ -3,6 +3,7 @@
 // ============================================
 
 import matchingService from '../services/MatchingService.js';
+import mongoose from 'mongoose';
 import Match from '../models/Match.js';
 import TemporaryChat from '../models/TemporaryChat.js';
 import Message from '../models/Message.js';
@@ -10,6 +11,13 @@ import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
 
 export const initChatSocket = (io) => {
+  // Helper: canonicalize two user ids into a stable ordering to avoid duplicate match records
+  function canonicalPair(a, b) {
+    const s1 = String(a);
+    const s2 = String(b);
+    return s1 < s2 ? [s1, s2] : [s2, s1];
+  }
+
   const waitingQueue = [];
   const activeChatRooms = new Map(); // socketId -> roomData
   const chatTimers = new Map(); // roomId -> timer
@@ -145,16 +153,30 @@ socket.on("auth_user", async ({ token, userId }) => {
             messages: []
           });
 
-          // ✅ TẠO MATCH RECORD
-          const match = await Match.create({
-            user1Id: userData._id || userData.id,
-            user2Id: bestMatch._id || bestMatch.id,
+          // ✅ TẠO MATCH RECORD (canonicalize pair + upsert to avoid duplicates)
+          const [u1, u2] = canonicalPair(userData._id || userData.id, bestMatch._id || bestMatch.id);
+          const matchPayload = {
             compatibilityScore: bestScore,
             compatibilityBreakdown: bestCompatibility.breakdown,
             status: 'active',
             expiresAt,
-            tempChatId: tempChat._id  
-          });
+            tempChatId: tempChat._id
+          };
+          const match = await Match.findOneAndUpdate(
+            { user1Id: u1, user2Id: u2 },
+            {
+              $setOnInsert: { user1Id: u1, user2Id: u2, ...matchPayload },
+              $set: {
+                user1Liked: false,
+                user2Liked: false,
+                user1LikedAt: null,
+                user2LikedAt: null,
+                matchedAt: null,
+                updatedAt: new Date()
+              }
+            },
+            { new: true, upsert: true, setDefaultsOnInsert: true }
+          );
 
           // ✅ GỬI THÔNG TIN CHO CẢ 2
           const partnerData = {
@@ -261,14 +283,89 @@ socket.on("auth_user", async ({ token, userId }) => {
     // ==========================================
     socket.on("like_partner", async ({ matchId }) => {
       try {
-        const match = await Match.findById(matchId);
+        // Try to load by provided matchId. If not found, attempt to resolve
+        // the participating user ids from socket state / activeChatRooms / temp chat
+        let match = null;
+        if (matchId) match = await Match.findById(matchId);
+
+        // resolve userId (liker) - declare once and initialize safely
+        let userId = socket.data?.userId || null;
+        if (!userId) {
+          const roomInfo = activeChatRooms.get(socket.id);
+          if (roomInfo && roomInfo.userId) {
+            userId = roomInfo.userId;
+            console.log(`ℹ️ Resolved userId from activeChatRooms: ${userId}`);
+          }
+        }
+
+        // If match not found, try to derive partnerId and either reuse an existing
+        // match between the two users or create a new one so likes can be applied.
         if (!match) {
-          socket.emit("error", { message: "Match not found" });
-          return;
+          let partnerId = null;
+
+          const roomInfo = activeChatRooms.get(socket.id);
+          if (roomInfo && roomInfo.partnerId) partnerId = roomInfo.partnerId;
+
+          if (!partnerId) {
+            // try TemporaryChat fallback
+            try {
+              const temp = await TemporaryChat.findOne({ $or: [{ user1SocketId: socket.id }, { user2SocketId: socket.id }] });
+              if (temp) {
+                if (temp.user1SocketId === socket.id) partnerId = temp.user2Id?.toString();
+                else if (temp.user2SocketId === socket.id) partnerId = temp.user1Id?.toString();
+              }
+            } catch (e) {
+              console.warn('❌ Error resolving partnerId from TemporaryChat:', e?.message || e);
+            }
+          }
+
+          if (userId && partnerId) {
+            // look for existing match between these users
+            const existing = await Match.findOne({
+              $or: [
+                { user1Id: userId, user2Id: partnerId },
+                { user1Id: partnerId, user2Id: userId }
+              ]
+            });
+
+            if (existing) {
+              match = existing;
+              console.log(`🔁 Reusing existing match ${existing._id} between ${userId} and ${partnerId}`);
+            } else {
+              // create a new match record and mark it active
+              const payload = {
+                status: 'active',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              };
+              // canonicalize ordering to ensure uniqueness and atomically upsert
+              const [u1, u2] = canonicalPair(userId, partnerId);
+              match = await Match.findOneAndUpdate(
+                { user1Id: u1, user2Id: u2 },
+                {
+                  $setOnInsert: { user1Id: u1, user2Id: u2, ...payload },
+                  $set: {
+                    user1Liked: false,
+                    user2Liked: false,
+                    user1LikedAt: null,
+                    user2LikedAt: null,
+                    matchedAt: null,
+                    updatedAt: new Date()
+                  }
+                },
+                { new: true, upsert: true, setDefaultsOnInsert: true }
+              );
+              console.log(`➕ Upserted match ${match._id} for users ${u1} & ${u2}`);
+            }
+          }
+
+          if (!match) {
+            socket.emit("error", { message: "Match not found and could not be created" });
+            return;
+          }
         }
 
         // Resolve userId: prefer attached socket data, then activeChatRooms, then TemporaryChat as fallback
-        let userId = socket.data.userId;
         if (!userId) {
           const roomInfo = activeChatRooms.get(socket.id);
           if (roomInfo && roomInfo.userId) {
@@ -297,8 +394,17 @@ socket.on("auth_user", async ({ token, userId }) => {
           ? { $set: { user1Liked: true, user1LikedAt: new Date() } }
           : { $set: { user2Liked: true, user2LikedAt: new Date() } };
 
-        const updatedMatch = await Match.findByIdAndUpdate(matchId, update, { new: true });
-        console.log(`💖 User ${userId || 'UNKNOWN'} liked ${isUser1 ? "user2" : "user1"}! Updated match: ${updatedMatch._id}`);
+        // Ensure we update the actual match document we resolved/created above
+        const targetMatchId = matchId || (match && match._id);
+        if (!targetMatchId) {
+          console.error('❌ No match id available to update likes');
+          socket.emit('error', { message: 'No match id to apply like' });
+          return;
+        }
+
+        // Perform atomic update and get PREVIOUS document to check whether the other side had already liked
+        const prevMatch = await Match.findByIdAndUpdate(targetMatchId, update, { new: false });
+        console.log('💖 like_partner update', { targetMatchId, userId, isUser1, prevUser1Liked: !!prevMatch?.user1Liked, prevUser2Liked: !!prevMatch?.user2Liked });
 
         // ✅ Gửi tín hiệu cho partner biết rằng họ được like
         const chatRoom = activeChatRooms.get(socket.id);
@@ -306,8 +412,11 @@ socket.on("auth_user", async ({ token, userId }) => {
           io.to(chatRoom.partnerSocketId).emit("partner_liked_you");
         }
 
-        // ✅ Nếu cả hai cùng like → mark matched and move temp messages into Message collection
-        if (updatedMatch.user1Liked && updatedMatch.user2Liked) {
+        // Determine if this like completed a mutual match (other side had already liked)
+        const otherHadLiked = isUser1 ? !!prevMatch?.user2Liked : !!prevMatch?.user1Liked;
+        if (otherHadLiked) {
+          // fetch the updated document for further processing
+          const updatedMatch = await Match.findById(targetMatchId);
           const matchIdForChat = updatedMatch._id;
 
           // Atomically update match status
@@ -316,22 +425,78 @@ socket.on("auth_user", async ({ token, userId }) => {
           });
 
           // Move temp messages (if any) into Message collection using chatRoomId = matchId
+          let tempChat = null;
+          console.log('➡️ Attempting temp message migration', { matchId: matchIdForChat, tempChatId: updatedMatch.tempChatId, roomInfo: chatRoom });
           if (updatedMatch.tempChatId) {
-            const tempChat = await TemporaryChat.findById(updatedMatch.tempChatId);
-            if (tempChat && tempChat.messages.length > 0) {
-              const tempMessages = tempChat.messages.map((msg) => ({
-                chatRoomId: matchIdForChat,
-                senderId: msg.senderId,
-                content: msg.content,
-                createdAt: msg.timestamp,
-                updatedAt: msg.timestamp
-              }));
+            try { tempChat = await TemporaryChat.findById(updatedMatch.tempChatId); } catch (e) { console.warn('❌ Error loading TemporaryChat by id:', e?.message || e); }
+          }
 
-              await Message.insertMany(tempMessages);
-
-              await TemporaryChat.findByIdAndDelete(updatedMatch.tempChatId);
-              console.log(`💬 Moved ${tempMessages.length} temp messages → match ${matchIdForChat}`);
+          // Fallbacks: by user ids, by socket ids from activeChatRooms, or by roomId
+          if (!tempChat) {
+            try {
+              tempChat = await TemporaryChat.findOne({
+                $or: [
+                  { user1Id: updatedMatch.user1Id, user2Id: updatedMatch.user2Id },
+                  { user1Id: updatedMatch.user2Id, user2Id: updatedMatch.user1Id }
+                ]
+              });
+              console.log('ℹ️ Fallback lookup by userIds', { found: !!tempChat, tempChatId: tempChat?._id });
+            } catch (e) {
+              console.warn('❌ Error finding fallback TemporaryChat by userIds:', e?.message || e);
             }
+          }
+
+          if (!tempChat && chatRoom) {
+            try {
+              tempChat = await TemporaryChat.findOne({
+                $or: [
+                  { user1SocketId: socket.id },
+                  { user2SocketId: socket.id },
+                  { user1SocketId: chatRoom.partnerSocketId },
+                  { user2SocketId: chatRoom.partnerSocketId }
+                ]
+              });
+              console.log('ℹ️ Fallback lookup by socketIds', { found: !!tempChat, tempChatId: tempChat?._id });
+            } catch (e) {
+              console.warn('❌ Error finding fallback TemporaryChat by socketIds:', e?.message || e);
+            }
+          }
+
+          if (!tempChat) {
+            console.log('⚠️ No TemporaryChat found to migrate for match', matchIdForChat);
+          }
+
+          if (tempChat && Array.isArray(tempChat.messages) && tempChat.messages.length > 0) {
+            const tempMessages = tempChat.messages.map((msg) => ({
+              chatRoomId: matchIdForChat,
+              senderId: msg.senderId,
+              content: msg.content || '',
+              attachment: msg.attachment || null,
+              icon: msg.icon || null,
+              type: msg.attachment ? 'image' : (msg.icon ? 'emoji' : 'text'),
+              status: 'sent',
+              timestamp: msg.timestamp || msg.createdAt || new Date(),
+              createdAt: msg.timestamp || msg.createdAt || new Date(),
+              updatedAt: msg.timestamp || msg.createdAt || new Date()
+            }));
+
+            const inserted = await Message.insertMany(tempMessages, { ordered: true });
+
+            // clear tempChatId on match if it was set
+            try {
+              if (updatedMatch.tempChatId) await Match.findByIdAndUpdate(matchIdForChat, { $unset: { tempChatId: "" } });
+            } catch (e) {
+              console.warn('Could not clear tempChatId on match', e?.message || e);
+            }
+
+            // delete temp chat after successful migration
+            try {
+              await TemporaryChat.findByIdAndDelete(tempChat._id);
+            } catch (e) {
+              console.warn('Could not delete TemporaryChat after migration', e?.message || e);
+            }
+
+            console.log(`💬 Moved ${inserted.length || tempMessages.length} temp messages → match ${matchIdForChat}`);
           }
 
           // Notify both users using match id as conversationId
@@ -341,6 +506,14 @@ socket.on("auth_user", async ({ token, userId }) => {
               conversationId: matchIdForChat,
               message: "🎉 Cả hai đã thích nhau! Giờ bạn có thể chat vĩnh viễn!",
             });
+          }
+
+          // Also notify users directly in their personal rooms so app-level sockets receive the event
+          try {
+            if (updatedMatch.user1Id) io.to(`user_${String(updatedMatch.user1Id)}`).emit('mutual_match', { matchId: matchIdForChat, message: '🎉 Cả hai đã thích nhau!' });
+            if (updatedMatch.user2Id) io.to(`user_${String(updatedMatch.user2Id)}`).emit('mutual_match', { matchId: matchIdForChat, message: '🎉 Cả hai đã thích nhau!' });
+          } catch (e) {
+            console.warn('Could not emit mutual_match to personal rooms', e?.message || e);
           }
 
           // Cancel 3-minute timer (if any)

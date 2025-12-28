@@ -10,7 +10,7 @@ import {
   memo,
   forwardRef,
 } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import axios from 'axios';
 import { Heart, Smile, ImageIcon, Send, MoreHorizontal } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
@@ -21,6 +21,19 @@ import ConversationListComponent from '../components/ConversationListComponent';
 
 // Vite environment variable for API base URL
 const API_URL = import.meta.env.VITE_API_URL;
+
+// Helper to read auth token from sessionStorage or axios defaults
+function getAuthToken() {
+  try {
+    const s = sessionStorage.getItem('accessToken');
+    if (s) return typeof s === 'string' && s.startsWith('Bearer ') ? s.slice(7) : s;
+  } catch (e) {}
+  try {
+    const header = axios.defaults.headers.common['Authorization'];
+    if (header && typeof header === 'string') return header.startsWith('Bearer ') ? header.slice(7) : header;
+  } catch (e) {}
+  return null;
+}
 
 // use shared conversation list component from components/
 
@@ -183,8 +196,10 @@ const MessageInput = memo(function MessageInput({ value, onChange, onSend, onTyp
       if (userId) form.append('userId', userId);
 
       try {
-        const res = await axios.post(`${API_URL}/api/messages/${conversationId}/upload`, form, {
-          headers: { 'Content-Type': 'multipart/form-data' },
+        const token = getAuthToken();
+        if (!token) console.warn('No accessToken found when uploading image for', conversationId);
+        const res = await axios.post(`${API_URL}/api/match/${conversationId}/upload`, form, {
+          headers: { 'Content-Type': 'multipart/form-data', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         });
         const url = res.data?.url || res.data?.secure_url || null;
         if (url) {
@@ -439,7 +454,16 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
       try {
         setMessages([]);
         shouldAutoScrollRef.current = true;
-        const res = await axios.get(`${API_URL}/api/messages/${conversationId}?limit=${PAGE_SIZE}`);
+        const token = getAuthToken();
+        if (!token) console.warn('No accessToken found when fetching messages for', conversationId);
+        // debug: show masked token preview and header being sent
+        try {
+          const preview = token ? `${token.slice(0,6)}...${token.slice(-4)}` : null;
+          console.debug('MESSAGES_FETCH', { conversationId, tokenPreview: preview, sendingAuth: !!token });
+        } catch (e) {}
+        const res = await axios.get(`${API_URL}/api/match/${conversationId}/messages?limit=${PAGE_SIZE}`, {
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+        });
         if (cancelled) return;
         if (res.data?.success) {
           let mapped = (res.data.messages || []).map((m) => enhanceMessage(m, user.id, false));
@@ -472,8 +496,11 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
     loadingMoreRef.current = true;
     try {
       const before = oldestMessageTimestampRef.current;
+      const token = getAuthToken();
+      if (!token) console.warn('No accessToken found when fetching older messages for', conversationId);
       const res = await axios.get(
-        `${API_URL}/api/messages/${conversationId}?limit=${PAGE_SIZE}${before ? `&before=${encodeURIComponent(before)}` : ''}`
+        `${API_URL}/api/match/${conversationId}/messages?limit=${PAGE_SIZE}${before ? `&before=${encodeURIComponent(before)}` : ''}`,
+        { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } }
       );
       if (res.data?.success) {
         let fetched = (res.data.messages || []).map((m) => enhanceMessage(m, user.id, false));
@@ -534,7 +561,8 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
     const base = API_URL ? API_URL : '';
     const loadCrushState = async () => {
       try {
-        const res = await axios.get(`${base}/api/v1/user/my-crush?userId=${user.id}`);
+        const token = getAuthToken();
+        const res = await axios.get(`${base}/api/v1/user/my-crush?userId=${user.id}`, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
         if (cancelled) return;
         if (res.data?.success && res.data.match) {
           const myMatch = res.data.match;
@@ -575,8 +603,9 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
     setCrushLoading(true);
     try {
       const base = API_URL ? API_URL : '';
+      const token = getAuthToken();
       if (action === 'set') {
-        const res = await axios.post(`${base}/api/v1/matches/${matchId}/set-crush`, { userId: user.id });
+        const res = await axios.post(`${base}/api/v1/matches/${matchId}/set-crush`, { userId: user.id }, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
         if (res.data?.success) {
           setIsCrush(true);
           // server returns updated match in res.data.match
@@ -590,7 +619,7 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
           toast.error(res.data?.message || 'Thao tác thất bại');
         }
       } else {
-        const res = await axios.post(`${base}/api/v1/matches/${matchId}/remove-crush`, { userId: user.id });
+        const res = await axios.post(`${base}/api/v1/matches/${matchId}/remove-crush`, { userId: user.id }, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
         if (res.data?.success) {
           setIsCrush(false);
           setIsMutual(false);
@@ -773,7 +802,7 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
                     onClick={async () => {
                       try {
                         setActionLoading(true);
-                        const token = sessionStorage.getItem('accessToken');
+                        const token = getAuthToken();
                         const res = await axios.post(`${API_URL}/api/users/report/${selectedConversation.partnerId}`, { reason: reportText }, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
                         toast.success(res.data?.message || 'Đã báo cáo');
                         setShowReportModal(false);
@@ -813,7 +842,7 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
                     onClick={async () => {
                       try {
                         setActionLoading(true);
-                        const token = sessionStorage.getItem('accessToken');
+                        const token = getAuthToken();
                         const res = await axios.post(`${API_URL}/api/users/block/${selectedConversation.partnerId}`, {}, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
                         toast.success(res.data?.message || 'Người dùng đã bị chặn.');
                         // remove conversation from list
@@ -851,6 +880,7 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
 function MessengerPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const params = useParams();
   const { socket } = useContext(SocketContext) ?? {};
   const API_URL = import.meta.env.VITE_API_URL;
 
@@ -880,14 +910,26 @@ function MessengerPage() {
 
     const fetchConversations = async () => {
       try {
-        const res = await axios.get(`${API_URL}/api/conversations?userId=${user.id}`);
-        if (res.data.success) {
-          const mapped = res.data.conversations.map(enhanceConversation);
+        const token = getAuthToken();
+        const res = await axios.get(`${API_URL}/api/match/matched-users/${user.id}`, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+        if (res.data?.success) {
+          const matches = res.data.matches || res.data.matchedUsers || [];
+          const mapped = matches.map((m) => ({
+            _id: String(m.matchId || m._id || m.id),
+            matchId: m.matchId || m._id || m.id,
+            conversationId: m.conversationId || null,
+            partnerId: m.partner?._id || m.id || m._id,
+            partnerName: m.partner?.name || m.name,
+            partnerAvatar: m.partner?.avatar || m.avatar,
+            lastMessage: m.lastMessage || null,
+            unreadCount: m.unreadCount || 0,
+          }));
+
           const sorted = sortConversations(mapped);
           setConversations(sorted);
         }
       } catch (error) {
-        console.error('Error fetching conversations:', error);
+        console.error('Error fetching matches as conversations:', error);
       }
     };
 
@@ -948,9 +990,68 @@ function MessengerPage() {
     }
   }, [conversations, location.search]);
 
+  // ========== SOCKET: mutual_match (both users liked) ==========
+  useEffect(() => {
+    if (!socket || !user?.id || !API_URL) return;
+
+    const handleMutual = async ({ conversationId, message }) => {
+      try {
+        // refresh matches list to include the newly matched pair
+        const token = getAuthToken();
+        const res = await axios.get(`${API_URL}/api/match/matched-users/${user.id}`, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+        if (res.data?.success) {
+          const matches = res.data.matches || res.data.matchedUsers || [];
+          const mapped = matches.map((m) => ({
+            _id: String(m.matchId || m._id || m.id),
+            matchId: m.matchId || m._id || m.id,
+            conversationId: m.conversationId || null,
+            partnerId: m.partner?._id || m.id || m._id,
+            partnerName: m.partner?.name || m.name,
+            partnerAvatar: m.partner?.avatar || m.avatar,
+            lastMessage: m.lastMessage || null,
+            unreadCount: m.unreadCount || 0,
+          }));
+
+          setConversations(sortConversations(mapped));
+        }
+      } catch (err) {
+        console.error('Failed to refresh matches after mutual_match', err);
+      }
+
+      if (conversationId) {
+        targetHandledRef.current = true;
+        setSelectedConversationId(String(conversationId));
+        try { toast.success(message || '🎉 Bạn đã match!'); } catch(e){}
+      }
+    };
+
+    socket.on('mutual_match', handleMutual);
+    return () => socket.off('mutual_match', handleMutual);
+  }, [socket, user?.id, API_URL]);
+
+  // ========== ROUTE PARAM: /messenger/:id ==========
+  useEffect(() => {
+    const routeId = params?.id;
+    if (!routeId || targetHandledRef.current) return;
+
+    // Try to find the conversation in current list; otherwise set selected to routeId directly
+    const targetConversation = conversations.find((conversation) => (conversation.matchId && String(conversation.matchId) === String(routeId)) || conversation._id === String(routeId));
+    targetHandledRef.current = true;
+    if (targetConversation) {
+      setSelectedConversationId(targetConversation._id);
+    } else {
+      setSelectedConversationId(String(routeId));
+    }
+  }, [params?.id, conversations]);
+
   // simplified selection handler (only sets id) - stable reference
   const handleSelectConversation = useCallback((conversationId) => {
     if (!conversationId) return;
+    // navigate to messenger room for this match
+    try {
+      navigate(`/messenger/${conversationId}`);
+    } catch (e) {}
+
     setSelectedConversationId((prev) => {
       if (prev === conversationId) return prev;
       targetHandledRef.current = false;
@@ -966,7 +1067,7 @@ function MessengerPage() {
     } catch (e) {
       console.warn('Failed to emit mark_as_read', e);
     }
-  }, []);
+  }, [navigate, socket]);
 
   // stable create-new handler
   const handleCreateNew = useCallback(() => navigate('/feed'), [navigate]);

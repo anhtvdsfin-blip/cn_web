@@ -37,20 +37,50 @@ export const getMatchedUsers = async (req, res) => {
   try {
     const userId = req.params.userId;
     
+    // include both active (ongoing temp matches) and matched (permanent matches)
     const matches = await Match.find({
-      $or: [
-        { user1Id: userId, status: 'active' },
-        { user2Id: userId, status: 'active' }
+      $and: [
+        { $or: [ { user1Id: userId }, { user2Id: userId } ] },
+        { status: { $in: ['active', 'matched'] } }
       ]
     }).populate('user1Id', 'name avatar').populate('user2Id', 'name avatar');
 
-    const matchedUsers = matches.map(match => {
-      const otherUser = String(match.user1Id._id) === userId ? match.user2Id : match.user1Id;
+    console.log(`ℹ️ Found ${matches.length} matches for user ${userId}`);
+
+    // Deduplicate by partner user id: prefer a 'matched' status over 'active', then newest updatedAt
+    const byPartner = new Map();
+    for (const m of matches) {
+      const otherUser = String(m.user1Id._id) === userId ? m.user2Id : m.user1Id;
+      const otherId = otherUser._id.toString();
+      if (!byPartner.has(otherId)) {
+        byPartner.set(otherId, m);
+        continue;
+      }
+      const existing = byPartner.get(otherId);
+      // prefer matched over active
+      if (existing.status === 'matched' && m.status !== 'matched') continue;
+      if (m.status === 'matched' && existing.status !== 'matched') {
+        byPartner.set(otherId, m);
+        continue;
+      }
+      // otherwise pick most recently updated
+      const existingDate = new Date(existing.updatedAt || existing.createdAt || 0);
+      const mDate = new Date(m.updatedAt || m.createdAt || 0);
+      if (mDate > existingDate) byPartner.set(otherId, m);
+    }
+
+    const matchedUsers = Array.from(byPartner.values()).map((matchDoc) => {
+      const otherUser = String(matchDoc.user1Id._id) === userId ? matchDoc.user2Id : matchDoc.user1Id;
       return {
-        _id: otherUser._id,
+        _id: matchDoc._id,
+        matchId: matchDoc._id,
         id: otherUser._id,
+        userId: otherUser._id,
         name: otherUser.name,
-        avatar: otherUser.avatar
+        avatar: otherUser.avatar,
+        status: matchDoc.status,
+        lastMessage: matchDoc.lastMessage || null,
+        updatedAt: matchDoc.updatedAt
       };
     });
 

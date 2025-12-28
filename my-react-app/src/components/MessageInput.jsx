@@ -26,7 +26,7 @@ const MessageInput = memo(function MessageInput({ value, onChange, onSend, onTyp
       if (userId) form.append('userId', userId);
 
       try {
-        const res = await axios.post(`${API_URL}/api/messages/${conversationId}/upload`, form, {
+        const res = await axios.post(`${API_URL}/api/match/${conversationId}/upload`, form, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
         const url = res.data?.url || res.data?.secure_url || null;

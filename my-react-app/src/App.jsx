@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, useNavigate } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import Landing from "./pages/Landing";
 import Home from "./pages/Home";
@@ -124,6 +124,18 @@ function App() {
   // 🔔 Listen to new notifications via socket
   useEffect(() => {
     if (!socket) return;
+    // When a mutual match happens anywhere in the app, open Messenger and select the match
+    const handleMutualNavigate = ({ conversationId, matchId }) => {
+      try {
+        const id = matchId || conversationId;
+        console.debug('App socket mutual_match received', { conversationId, matchId, id });
+        if (id) navigate(`/messenger/${encodeURIComponent(String(id))}`);
+        else navigate('/messenger');
+      } catch (e) {
+        console.error('Failed to navigate to messenger on mutual_match', e);
+      }
+    };
+    socket.on('mutual_match', handleMutualNavigate);
 
     const handleNewNotification = ({ notification }) => {
       // Add new notification to top of array
@@ -176,8 +188,11 @@ function App() {
     return () => {
       socket.off("new_notification", handleNewNotification);
       socket.off('new_message', handleNewMessageForNotif);
+      socket.off('mutual_match', handleMutualNavigate);
     };
   }, [socket, user?.id]);
+
+  const navigate = useNavigate();
 
   return (
     <UserContext.Provider value={{ user, setUser }}>

@@ -1,6 +1,9 @@
 import express from 'express';
+import multer from 'multer';
 import matchingService from '../services/MatchingService.js';
 import { getMatchedUsers } from '../controllers/matchControllers.js';
+import { getMessages, sendMessage, uploadChatImage } from '../controllers/conversationController.js';
+import { requireAuth } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -174,5 +177,12 @@ router.post('/hobby-similarity', async (req, res) => {
 
 // GET /api/match/matched-users/:userId
 router.get('/matched-users/:userId', getMatchedUsers);
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+// Backwards-compatible message routes under /api/match/:matchId
+router.get('/:matchId/messages', requireAuth, getMessages);
+router.post('/:matchId/messages', requireAuth, sendMessage);
+router.post('/:matchId/upload', requireAuth, upload.single('image'), uploadChatImage);
 
 export default router;
