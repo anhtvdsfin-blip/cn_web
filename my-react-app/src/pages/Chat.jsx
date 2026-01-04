@@ -110,27 +110,30 @@ const navigate = useNavigate();
   });
 
   // ===== MUTUAL MATCH =====
-  socket.on("mutual_match", ({ conversationId: convId, message }) => {
-    console.log("🎉 Mutual match received! Conversation:", convId);
-    console.log("📦 Full data:", { conversationId: convId, message });
-    
+  socket.on("mutual_match", (payload) => {
+    // Accept multiple possible payload shapes: { conversationId }, { matchId }, or { matchId: ... }
+    const convId = payload?.conversationId || payload?.matchId || payload?.chatRoomId || payload?.conversation || payload?.id || null;
+    const message = payload?.message || payload?.msg || payload?.text || '';
+    console.log("🎉 Mutual match received; payload:", payload, "resolvedId:", convId);
+
     if (!convId) {
-      console.error("❌ No conversationId in mutual_match event!");
-      alert("❌ Lỗi: Không nhận được conversationId!");
+      console.error("❌ No conversationId/matchId in mutual_match event!", payload);
+      // don't block; show a lightweight notification and return
+      alert("❌ Lỗi: Không nhận được conversationId/matchId từ server. Hãy thử tải lại.");
       return;
     }
 
     setIsMatched(true);
     setConversationId(convId);
     setIsExpired(false);
-    
+
     alert(message || "🎉 Cả hai đã thích nhau! Giờ bạn có thể chat vĩnh viễn!");
 
-    // ✅ Chuyển SPA bằng React Router - dùng cả query và path param
+    // Navigate to messenger for this match
     console.log(`🚀 Navigating to /messenger/${convId}`);
     setTimeout(() => {
       navigate(`/messenger/${convId}`, { replace: true });
-    }, 500); // Delay nhỏ để đảm bảo state đã update
+    }, 500);
   });
 
   // ===== NEW MESSAGE =====

@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Match from '../models/Match.js';
 import Message from '../models/Message.js';
 import User from '../models/User.js';
@@ -59,20 +60,91 @@ class ConversationService {
       if (!match) {
         return { success: false, error: 'Match not found' };
       }
+      // Collect messages from embedded `match.messages` (if present) and from Message collection.
+      const results = [];
 
-      // Fetch messages from Message collection
-      const messages = await Message.find({ chatRoomId: matchId })
+      // 1) If match has embedded messages array, include them first
+      if (Array.isArray(match.messages) && match.messages.length > 0) {
+        for (const m of match.messages) {
+          results.push({
+            _id: m._id || m.id || null,
+            chatRoomId: matchId,
+            senderId: m.senderId,
+            content: m.content || '',
+            attachment: m.attachment || null,
+            icon: m.icon || null,
+            type: m.type || 'text',
+            status: m.status || 'sent',
+            timestamp: m.timestamp || m.createdAt || new Date()
+          });
+        }
+      }
+
+      // 2) Also fetch persisted Message documents for this chatRoomId or linked chatRoomId
+      const roomIds = [matchId.toString()];
+      if (match.chatRoomId) roomIds.push(match.chatRoomId.toString());
+
+      // Build a query list that includes both string ids and ObjectId variants
+      const queryRoomIds = [];
+      for (const id of roomIds) {
+        queryRoomIds.push(id);
+        try {
+          if (mongoose.Types.ObjectId.isValid(id)) {
+            const oid = new mongoose.Types.ObjectId(id);
+            // avoid pushing duplicate when id is already an ObjectId-like string
+            if (!queryRoomIds.some((v) => v instanceof mongoose.Types.ObjectId && v.equals(oid))) {
+              queryRoomIds.push(oid);
+            }
+          }
+        } catch (e) {
+          // ignore invalid conversions
+        }
+      }
+
+      // Debug: log roomIds we will query and embedded messages count
+      try {
+        console.debug('ConversationService.getMessages: matchId=', String(matchId), 'roomIds=', roomIds, 'queryRoomIds=', queryRoomIds, 'embeddedCount=', Array.isArray(match.messages) ? match.messages.length : 0);
+      } catch (e) {}
+
+      const persisted = await Message.find({ chatRoomId: { $in: queryRoomIds } })
         .populate('senderId', 'name avatar')
-        .sort({ timestamp: -1 })
+        .sort({ timestamp: -1, createdAt: -1 })
         .limit(limit)
         .skip(skip)
         .lean();
 
-      // Reverse to get chronological order
-      return {
-        success: true,
-        messages: messages.reverse()
-      };
+      try { console.debug('ConversationService.getMessages: persistedCount=', persisted.length); } catch (e) {}
+
+      for (const m of persisted) {
+        results.push({
+          _id: m._id,
+          chatRoomId: m.chatRoomId,
+          senderId: m.senderId,
+          content: m.content || '',
+          attachment: m.attachment || null,
+          icon: m.icon || null,
+          type: m.type || 'text',
+          status: m.status || 'sent',
+          timestamp: m.timestamp || m.createdAt || new Date()
+        });
+      }
+
+      // Deduplicate by _id if present, otherwise by timestamp+senderId
+      const seen = new Map();
+      const deduped = [];
+      // Sort combined results oldest->newest
+      results.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      for (const m of results) {
+        const key = m._id ? String(m._id) : `${m.senderId}-${new Date(m.timestamp).getTime()}`;
+        if (seen.has(key)) continue;
+        seen.set(key, true);
+        deduped.push(m);
+      }
+
+      // Apply pagination on final deduped list
+      const paged = deduped.slice(Math.max(0, deduped.length - limit - skip), deduped.length - skip);
+
+      return { success: true, messages: paged };
     } catch (error) {
       console.error('❌ Error fetching messages:', error);
       throw error;

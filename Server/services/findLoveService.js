@@ -248,13 +248,13 @@ const createOrUpdateMatch = async (userId, targetId, compatibility) => {
   const openingMoveUser1 = userA ? (userA.selectedOpeningMove || null) : null;
   const openingMoveUser2 = userB ? (userB.selectedOpeningMove || null) : null;
 
-  const created = await Match.create({
-    user1Id: userId,
-    user2Id: targetId,
-    openingMoveUser1,
-    openingMoveUser2,
-    ...matchUpdate,
-  });
+  // Canonicalize user ordering and upsert atomically to avoid duplicate matches
+  const [u1, u2] = String(userId) < String(targetId) ? [String(userId), String(targetId)] : [String(targetId), String(userId)];
+  const created = await Match.findOneAndUpdate(
+    { user1Id: u1, user2Id: u2 },
+    { $setOnInsert: { user1Id: u1, user2Id: u2, openingMoveUser1, openingMoveUser2, ...matchUpdate } },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
 
   return created._id;
 };

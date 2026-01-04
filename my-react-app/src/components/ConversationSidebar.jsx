@@ -20,14 +20,26 @@ export default function ConversationSidebar({
     if (!user?.id) return;
 
     try {
-      const res = await axios.get(`${API_URL}/api/conversations?userId=${user.id}`);
-      if (res.data.success) {
-        const mapped = res.data.conversations.map(enhanceConversation);
+      // Use match endpoint to fetch matched users and map into conversation shape
+      const res = await axios.get(`${API_URL}/api/match/matched-users/${user.id}`);
+      if (res.data?.success) {
+        const matches = res.data.matches || res.data.matchedUsers || [];
+        const mapped = matches.map((m) => ({
+          _id: String(m.matchId || m._id || m.id),
+          matchId: m.matchId || m._id || m.id,
+          conversationId: m.conversationId || null,
+          partnerId: m.partner?._id || m.id || m._id,
+          partnerName: m.partner?.name || m.name,
+          partnerAvatar: m.partner?.avatar || m.avatar,
+          lastMessage: m.lastMessage || null,
+          unreadCount: m.unreadCount || 0,
+        }));
+
         const sorted = sortConversations(mapped);
         onConversationsUpdate(sorted);
       }
     } catch (error) {
-      console.error('Error fetching conversations:', error);
+      console.error('Error fetching matches as conversations:', error);
     }
   }, [API_URL, user?.id, onConversationsUpdate]);
 

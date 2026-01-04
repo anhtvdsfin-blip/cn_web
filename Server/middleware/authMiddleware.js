@@ -13,6 +13,7 @@ export async function requireAuth(req, res, next) {
     }
 
     if (!token) {
+      console.warn('requireAuth: missing token. authHeader=', authHeader ? (String(authHeader).slice(0,80)) : authHeader);
       return res.status(401).json({ success: false, message: 'Unauthorized: missing token' });
     }
 
@@ -20,6 +21,9 @@ export async function requireAuth(req, res, next) {
     try {
       payload = jwt.verify(token, process.env.JWT_SECRET);
     } catch (err) {
+      try {
+        console.warn('requireAuth: token verification failed. tokenPreview=', (token || '').slice(0, 12), 'error=', err.message);
+      } catch (e) {}
       return res.status(401).json({ success: false, message: 'Unauthorized: invalid token' });
     }
 

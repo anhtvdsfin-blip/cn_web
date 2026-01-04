@@ -1,7 +1,7 @@
 import { memo, useCallback } from 'react';
 
 const ConversationItem = memo(function ConversationItem({ conversation, isActive, onSelect }) {
-  const handleClick = useCallback(() => onSelect(conversation._id), [conversation._id, onSelect]);
+  const handleClick = useCallback(() => onSelect(conversation.matchId || conversation._id), [conversation.matchId, conversation._id, onSelect]);
 
   return (
     <button

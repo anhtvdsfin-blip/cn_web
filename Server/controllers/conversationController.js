@@ -26,13 +26,16 @@ export const getConversations = async (req, res) => {
 // ----------------------------
 export const getMessages = async (req, res) => {
   try {
-    const { conversationId } = req.params;
-
+    // support routes using either :conversationId or :matchId
+    const conversationId = req.params.conversationId || req.params.matchId || null;
     if (!conversationId) {
-      return res.status(400).json({ success: false, error: 'conversationId is required' });
+      return res.status(400).json({ success: false, error: 'conversationId (or matchId) is required' });
     }
 
-    const result = await ConversationService.getMessages(conversationId);
+    const limit = parseInt(req.query.limit, 10) || 50;
+    const skip = parseInt(req.query.skip, 10) || 0;
+
+    const result = await ConversationService.getMessages(conversationId, limit, skip);
     res.json(result);
 
   } catch (err) {

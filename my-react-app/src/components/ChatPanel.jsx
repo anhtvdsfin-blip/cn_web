@@ -177,8 +177,8 @@ export default function ChatPanel({ selectedConversationId, conversations, onCon
       shouldAutoScrollRef.current = true;
 
       try {
-        const res = await axios.get(`${API_URL}/api/messages/${conversationId}`);
-        if (res.data.success) {
+        const res = await axios.get(`${API_URL}/api/match/${conversationId}/messages`);
+        if (res.data?.success) {
           const mapped = (res.data.messages || []).map((message) => enhanceMessage(message, user.id, false));
           setMessages(mapped);
           lastMessageMetaRef.current = { id: null, fromSelf: false };
