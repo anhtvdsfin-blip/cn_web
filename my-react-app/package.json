@@ -12,6 +12,7 @@
   "dependencies": {
     "@heroicons/react": "^2.2.0",
     "axios": "^1.12.2",
+    "baseline-browser-mapping": "^2.9.11",
     "lucide-react": "^0.555.0",
     "react": "^19.1.1",
     "react-datepicker": "^9.0.0",

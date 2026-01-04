@@ -93,7 +93,6 @@ export default function Landing() {
               </Link>
               <div className="flex flex-col text-sm text-slate-600">
                 <span>Trải nghiệm web dành riêng cho HUSTers</span>
-                <span>• Đăng nhập trong vài giây với Google</span>
               </div>
             </div>
 
