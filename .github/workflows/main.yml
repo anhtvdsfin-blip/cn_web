@@ -58,5 +58,5 @@ jobs:
               --restart unless-stopped \
               hustlove-be:${{ env.IMAGE_TAG }}
 
-            docker image prune -f
+            docker image prune -a
           EOF
