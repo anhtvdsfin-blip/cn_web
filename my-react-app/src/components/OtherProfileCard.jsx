@@ -14,6 +14,8 @@ import {
   Briefcase,
   MoreHorizontal,
 } from 'lucide-react';
+import ConfirmModal from './ConfirmModal';
+import InputModal from './InputModal';
 
 function InfoTag({ children }) {
   return (
@@ -339,113 +341,79 @@ export default function OtherProfileCard({ profile, onBlocked }) {
         </div>
       )}
 
-      {showReportModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-rose-950/55 backdrop-blur-sm">
-          <div className="relative w-full max-w-md overflow-hidden rounded-[20px] border border-rose-100 bg-white p-6 shadow-lg">
-            <h3 className="text-lg font-semibold text-slate-900">Báo cáo {profile.name}</h3>
-            <p className="mt-2 text-sm text-slate-600">Vui lòng mô tả lý do bạn báo cáo người này.</p>
-            <textarea
-              value={reportText}
-              onChange={(e) => setReportText(e.target.value)}
-              className="mt-4 h-32 w-full rounded-md border border-rose-100 p-3 text-sm"
-              placeholder="Nội dung báo cáo (không bắt buộc)"
-            />
+      <InputModal
+        isOpen={showReportModal}
+        onClose={() => { setShowReportModal(false); setReportText(''); }}
+        title={`Báo cáo ${profile.name}`}
+        message="Vui lòng mô tả lý do bạn báo cáo người này."
+        placeholder="Nội dung báo cáo (không bắt buộc)"
+        confirmText="Gửi báo cáo"
+        cancelText="Hủy"
+        value={reportText}
+        onChange={setReportText}
+        onSubmit={async (reason) => {
+          try {
+            setActionLoading(true);
+            const API_URL = import.meta.env.VITE_API_URL;
+            const token = sessionStorage.getItem('accessToken');
+            const res = await fetch(`${API_URL}/api/users/report/${profile.id}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              },
+              body: JSON.stringify({ reason }),
+            });
+            if (!res.ok) {
+              const payload = await res.json().catch(() => null);
+              throw new Error(payload?.message || 'Không thể gửi báo cáo.');
+            }
+            toast.success('Báo cáo của bạn đã được gửi.');
+            setReportText('');
+          } catch (err) {
+            console.error('report error', err);
+            toast.error(err.message || 'Không thể gửi báo cáo.');
+          } finally {
+            setActionLoading(false);
+          }
+        }}
+      />
 
-            <div className="mt-4 flex justify-end gap-3">
-              <button
-                onClick={() => { setShowReportModal(false); setReportText(''); }}
-                className="rounded-full border border-rose-100 bg-white px-4 py-2 text-sm text-rose-600"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    setActionLoading(true);
-                    const API_URL = import.meta.env.VITE_API_URL;
-                    const token = sessionStorage.getItem('accessToken');
-                    const res = await fetch(`${API_URL}/api/users/report/${profile.id}`, {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                      },
-                      body: JSON.stringify({ reason: reportText }),
-                    });
-                    if (!res.ok) {
-                      const payload = await res.json().catch(() => null);
-                      throw new Error(payload?.message || 'Không thể gửi báo cáo.');
-                    }
-                    toast.success('Báo cáo của bạn đã được gửi.');
-                    setShowReportModal(false);
-                    setReportText('');
-                  } catch (err) {
-                    console.error('report error', err);
-                    toast.error(err.message || 'Không thể gửi báo cáo.');
-                  } finally {
-                    setActionLoading(false);
-                  }
-                }}
-                disabled={actionLoading}
-                className="rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white"
-              >
-                Gửi báo cáo
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showBlockConfirm && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-rose-950/55 backdrop-blur-sm">
-          <div className="relative w-full max-w-sm overflow-hidden rounded-[20px] border border-rose-100 bg-white p-6 shadow-lg">
-            <h3 className="text-lg font-semibold text-slate-900">Chặn {profile.name}?</h3>
-            <p className="mt-2 text-sm text-slate-600">Người dùng này sẽ bị chặn và bạn sẽ không thấy họ nữa.</p>
-
-            <div className="mt-4 flex gap-3">
-              <button
-                onClick={() => setShowBlockConfirm(false)}
-                disabled={actionLoading}
-                className="flex-1 rounded-full border border-rose-100 bg-white px-4 py-2 text-sm text-rose-600"
-              >
-                Hủy
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    setActionLoading(true);
-                    const API_URL = import.meta.env.VITE_API_URL;
-                    const token = sessionStorage.getItem('accessToken');
-                    const res = await fetch(`${API_URL}/api/users/block/${profile.id}`, {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                      },
-                    });
-                    if (!res.ok) {
-                      const payload = await res.json().catch(() => null);
-                      throw new Error(payload?.message || 'Không thể chặn người dùng.');
-                    }
-                    toast.success('Người dùng đã bị chặn.');
-                    setShowBlockConfirm(false);
-                    if (typeof onBlocked === 'function') onBlocked(profile.id);
-                  } catch (err) {
-                    console.error('block error', err);
-                    toast.error(err.message || 'Không thể chặn người dùng.');
-                  } finally {
-                    setActionLoading(false);
-                  }
-                }}
-                disabled={actionLoading}
-                className="flex-1 rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white"
-              >
-                Chặn và ẩn
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmModal
+        isOpen={showBlockConfirm}
+        onClose={() => setShowBlockConfirm(false)}
+        title={`Chặn ${profile.name}?`}
+        message="Người dùng này sẽ bị chặn và bạn sẽ không thấy họ nữa."
+        confirmText="Chặn và ẩn"
+        cancelText="Hủy"
+        type="danger"
+        onConfirm={async () => {
+          try {
+            setActionLoading(true);
+            const API_URL = import.meta.env.VITE_API_URL;
+            const token = sessionStorage.getItem('accessToken');
+            const res = await fetch(`${API_URL}/api/users/block/${profile.id}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              },
+            });
+            if (!res.ok) {
+              const payload = await res.json().catch(() => null);
+              throw new Error(payload?.message || 'Không thể chặn người dùng.');
+            }
+            toast.success('Người dùng đã bị chặn.');
+            setShowBlockConfirm(false);
+            if (typeof onBlocked === 'function') onBlocked(profile.id);
+          } catch (err) {
+            console.error('block error', err);
+            toast.error(err.message || 'Không thể chặn người dùng.');
+          } finally {
+            setActionLoading(false);
+          }
+        }}
+      />
 
         <div className="absolute top-4 right-4 z-30">
           <div className="relative">

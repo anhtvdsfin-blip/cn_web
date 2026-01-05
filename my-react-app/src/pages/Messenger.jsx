@@ -18,6 +18,8 @@ import toast from 'react-hot-toast';
 import { SocketContext } from '../contexts';
 import { enhanceMessage, sortConversations, SCROLL_THRESHOLD, formatTimestamp, enhanceConversation } from '../utils/messageHelpers';
 import ConversationListComponent from '../components/ConversationListComponent';
+import ConfirmModal from '../components/ConfirmModal';
+import InputModal from '../components/InputModal';
 
 // Vite environment variable for API base URL
 const API_URL = import.meta.env.VITE_API_URL;
@@ -280,8 +282,18 @@ const ChatHeader = memo(function ChatHeader({ conversation, isTyping, showMenu, 
   return (
     <header className="flex items-center justify-between rounded-t-[32px] border-b border-white/60 bg-white/70 px-6 py-4">
       <div className="flex items-center gap-3">
-        <div className="relative flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-[#f7b0d2] to-[#fdd2b7] text-lg font-semibold text-white shadow-sm">
-          {conversation.partnerName?.[0]?.toUpperCase()}
+        <div className="relative">
+          {conversation.partnerAvatar ? (
+            <img
+              src={conversation.partnerAvatar}
+              alt={conversation.partnerName}
+              className="h-12 w-12 rounded-full object-cover shadow-sm"
+            />
+          ) : (
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-[#f7b0d2] to-[#fdd2b7] text-lg font-semibold text-white shadow-sm">
+              {conversation.partnerName?.[0]?.toUpperCase()}
+            </div>
+          )}
           <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-rose-400 shadow">♥</span>
         </div>
         <div>
@@ -321,7 +333,7 @@ const ChatHeader = memo(function ChatHeader({ conversation, isTyping, showMenu, 
                 disabled={actionLoading}
                 className="w-full px-4 py-2 text-left text-sm hover:bg-rose-50 disabled:opacity-60"
               >
-                Báo cáo (Report)
+                Báo cáo người dùng
               </button>
               <button
                 type="button"
@@ -329,7 +341,7 @@ const ChatHeader = memo(function ChatHeader({ conversation, isTyping, showMenu, 
                 disabled={actionLoading}
                 className="w-full px-4 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-60"
               >
-                Chặn (Block)
+                Chặn người dùng
               </button>
             </div>
           )}
@@ -358,7 +370,6 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
   const [isMutual, setIsMutual] = useState(false);
   const [crushLoading, setCrushLoading] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [reportText, setReportText] = useState('');
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
 
   useEffect(() => {
@@ -782,91 +793,56 @@ function ChatPanel({ API_URL, socket, user, selectedConversation, selectedConver
           />
 
           {/* Report Modal */}
-          {showReportModal && (
-            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-rose-950/55 backdrop-blur-sm">
-              <div className="relative w-full max-w-md overflow-hidden rounded-[20px] border border-rose-100 bg-white p-6 shadow-lg">
-                <h3 className="text-lg font-semibold text-slate-900">Báo cáo {selectedConversation.partnerName}</h3>
-                <p className="mt-2 text-sm text-slate-600">Mô tả lý do báo cáo (không bắt buộc).</p>
-                <textarea
-                  value={reportText}
-                  onChange={(e) => setReportText(e.target.value)}
-                  className="mt-4 h-32 w-full rounded-md border border-rose-100 p-3 text-sm"
-                  placeholder="Nội dung báo cáo"
-                />
-                <div className="mt-4 flex justify-end gap-3">
-                  <button
-                    onClick={() => { setShowReportModal(false); setReportText(''); }}
-                    className="rounded-full border border-rose-100 bg-white px-4 py-2 text-sm text-rose-600"
-                  >
-                    Hủy
-                  </button>
-                  <button
-                    onClick={async () => {
-                      try {
-                        setActionLoading(true);
-                        const token = getAuthToken();
-                        const res = await axios.post(`${API_URL}/api/users/report/${selectedConversation.partnerId}`, { reason: reportText }, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
-                        toast.success(res.data?.message || 'Đã báo cáo');
-                        setShowReportModal(false);
-                        setReportText('');
-                      } catch (err) {
-                        console.error('Report failed', err);
-                        toast.error('Báo cáo thất bại');
-                      } finally {
-                        setActionLoading(false);
-                      }
-                    }}
-                    disabled={actionLoading}
-                    className="rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white"
-                  >
-                    Gửi báo cáo
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          <InputModal
+            isOpen={showReportModal}
+            onClose={() => setShowReportModal(false)}
+            onSubmit={async (reason) => {
+              try {
+                setActionLoading(true);
+                const token = getAuthToken();
+                const res = await axios.post(`${API_URL}/api/users/report/${selectedConversation.partnerId}`, { reason }, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+                toast.success(res.data?.message || 'Đã báo cáo');
+              } catch (err) {
+                console.error('Report failed', err);
+                toast.error('Báo cáo thất bại');
+              } finally {
+                setActionLoading(false);
+              }
+            }}
+            title={`Báo cáo ${selectedConversation?.partnerName || ''}`}
+            message="Mô tả lý do báo cáo (không bắt buộc)."
+            placeholder="Nội dung báo cáo..."
+            confirmText="Gửi báo cáo"
+            cancelText="Hủy"
+            required={false}
+          />
 
           {/* Block confirm modal */}
-          {showBlockConfirm && (
-            <div className="fixed inset-0 z-[80] flex items-center justify-center bg-rose-950/55 backdrop-blur-sm">
-              <div className="relative w-full max-w-sm overflow-hidden rounded-[20px] border border-rose-100 bg-white p-6 shadow-lg">
-                <h3 className="text-lg font-semibold text-slate-900">Chặn {selectedConversation.partnerName}?</h3>
-                <p className="mt-2 text-sm text-slate-600">Người dùng này sẽ bị chặn và bạn sẽ không thấy họ nữa.</p>
-                <div className="mt-4 flex gap-3">
-                  <button
-                    onClick={() => setShowBlockConfirm(false)}
-                    disabled={actionLoading}
-                    className="flex-1 rounded-full border border-rose-100 bg-white px-4 py-2 text-sm text-rose-600"
-                  >
-                    Hủy
-                  </button>
-                  <button
-                    onClick={async () => {
-                      try {
-                        setActionLoading(true);
-                        const token = getAuthToken();
-                        const res = await axios.post(`${API_URL}/api/users/block/${selectedConversation.partnerId}`, {}, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
-                        toast.success(res.data?.message || 'Người dùng đã bị chặn.');
-                        // remove conversation from list
-                        setConversations((prev) => prev.filter((c) => c._id !== selectedConversation._id));
-                        setSelectedConversationId(null);
-                        setShowBlockConfirm(false);
-                      } catch (err) {
-                        console.error('Block failed', err);
-                        toast.error('Chặn thất bại');
-                      } finally {
-                        setActionLoading(false);
-                      }
-                    }}
-                    disabled={actionLoading}
-                    className="flex-1 rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white"
-                  >
-                    Chặn và ẩn
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          <ConfirmModal
+            isOpen={showBlockConfirm}
+            onClose={() => setShowBlockConfirm(false)}
+            onConfirm={async () => {
+              try {
+                setActionLoading(true);
+                const token = getAuthToken();
+                const res = await axios.post(`${API_URL}/api/users/block/${selectedConversation.partnerId}`, {}, { headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+                toast.success(res.data?.message || 'Người dùng đã bị chặn.');
+                // remove conversation from list
+                setConversations((prev) => prev.filter((c) => c._id !== selectedConversation._id));
+                setSelectedConversationId(null);
+              } catch (err) {
+                console.error('Block failed', err);
+                toast.error('Chặn thất bại');
+              } finally {
+                setActionLoading(false);
+              }
+            }}
+            title={`Chặn ${selectedConversation?.partnerName || ''}?`}
+            message="Người dùng này sẽ bị chặn và bạn sẽ không thấy họ nữa."
+            confirmText="Chặn và ẩn"
+            cancelText="Hủy"
+            type="danger"
+          />
         </>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center text-rose-300">

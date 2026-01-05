@@ -364,8 +364,12 @@ export default function Profile() {
         avatar: formData.photoGallery[0] || profile?.avatar || '',
       };
 
+      const token = sessionStorage.getItem('accessToken');
       const res = await axios.put(`${API_URL}/api/users/${userId}/profile`, payload, {
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         withCredentials: true,
       });
 

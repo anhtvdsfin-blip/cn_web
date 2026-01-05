@@ -182,13 +182,17 @@ export default function PhotoManagement() {
     setStatusMessage('');
 
     try {
+      const token = sessionStorage.getItem('accessToken');
       const response = await axios.put(
         `${API_URL}/api/users/${userId}/profile`,
         {
           photoGallery: payloadPhotos,
           avatar: payloadPhotos[0] || '',
         },
-        { withCredentials: true },
+        { 
+          withCredentials: true,
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        },
       );
 
       const updatedUser = response.data?.user;

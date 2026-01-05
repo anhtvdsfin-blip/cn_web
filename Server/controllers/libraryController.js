@@ -1,5 +1,6 @@
 import LibraryRoom from '../models/LibraryRoom.js';
 import User from '../models/User.js';
+import Match from '../models/Match.js';
 import { notificationService } from '../services/NotificationService.js';
 import { emitNotification } from '../socket/notificationSocket.js';
 import { Notification } from '../models/Notification.js';
@@ -25,31 +26,58 @@ export const createRoom = async (req, res) => {
     const room = new LibraryRoom(roomData);
 
     await room.save();
-    // Create a confirmation notification for the creator and emit it
+    
+    // Gửi thông báo cho các user đã match với người tạo phòng (không gửi cho chính người tạo)
     try {
-        if (createdBy) {
+      if (createdBy) {
         const creator = await User.findById(createdBy).select('name');
-        const notif = await notificationService.createNotification({
-          recipientId: createdBy,
-          senderId: createdBy,
-          type: 'library_room_created',
-          content: `${creator?.name || 'Bạn'} đã tạo phòng ${room.name}`,
-          isRead: false,
-          roomId: room._id
-        });
+        
+        // Lấy danh sách các user đã match với người tạo phòng
+        const matches = await Match.find({
+          $or: [
+            { user1Id: createdBy },
+            { user2Id: createdBy }
+          ],
+          status: 'matched'
+        }).lean();
+        
+        // Lấy danh sách ID các user đã match (trừ người tạo)
+        const matchedUserIds = matches.map(m => {
+          const u1 = m.user1Id?.toString();
+          const u2 = m.user2Id?.toString();
+          return u1 === createdBy.toString() ? u2 : u1;
+        }).filter(Boolean);
+        
+        console.log(`📢 Sending room creation notification to ${matchedUserIds.length} matched users`);
+        
+        // Gửi thông báo cho từng user đã match
+        for (const recipientId of matchedUserIds) {
+          try {
+            const notif = await notificationService.createNotification({
+              recipientId: recipientId,
+              senderId: createdBy,
+              type: 'library_room_created',
+              content: `${creator?.name || 'Ai đó'} đã tạo phòng học "${room.name}"`,
+              isRead: false,
+              roomId: room._id
+            });
 
-        const populatedNotif = await Notification.findById(notif._id)
-          .populate('senderId', 'name avatar')
-          .populate('roomId', 'name')
-          .lean();
+            const populatedNotif = await Notification.findById(notif._id)
+              .populate('senderId', 'name avatar')
+              .populate('roomId', 'name')
+              .lean();
 
-        if (req.io) {
-          try { emitNotification(req.io, createdBy, populatedNotif); } catch (e) { console.warn('emitNotification failed', e); }
-          try { req.emitNotification?.(createdBy, populatedNotif); } catch (e) { console.warn('req.emitNotification failed', e); }
+            if (req.io) {
+              try { emitNotification(req.io, recipientId, populatedNotif); } catch (e) { console.warn('emitNotification failed', e); }
+              try { req.emitNotification?.(recipientId, populatedNotif); } catch (e) { console.warn('req.emitNotification failed', e); }
+            }
+          } catch (notifErr) {
+            console.warn(`Failed to send notification to ${recipientId}:`, notifErr.message);
+          }
         }
       }
     } catch (err) {
-      console.error('❌ Failed to create/emit notification for room create:', err);
+      console.error('❌ Failed to create/emit notifications for room create:', err);
     }
 
     res.status(201).json({ success: true, room });

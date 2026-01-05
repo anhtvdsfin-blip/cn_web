@@ -14,13 +14,23 @@ const ConversationItem = memo(function ConversationItem({ conversation, isActive
       }`}
     >
       <div className="flex items-center gap-3">
-        <div
-          className={`flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-[#f9b9d0] to-[#c7b6ff] text-base font-semibold text-white shadow-sm ${
-            isActive ? 'ring-2 ring-rose-300' : ''
-          }`}
-        >
-          {conversation.partnerName?.[0]?.toUpperCase()}
-        </div>
+        {conversation.partnerAvatar ? (
+          <img
+            src={conversation.partnerAvatar}
+            alt={conversation.partnerName}
+            className={`h-12 w-12 rounded-full object-cover shadow-sm ${
+              isActive ? 'ring-2 ring-rose-300' : ''
+            }`}
+          />
+        ) : (
+          <div
+            className={`flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-[#f9b9d0] to-[#c7b6ff] text-base font-semibold text-white shadow-sm ${
+              isActive ? 'ring-2 ring-rose-300' : ''
+            }`}
+          >
+            {conversation.partnerName?.[0]?.toUpperCase()}
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-slate-800">{conversation.partnerName}</p>
           <p className="truncate text-xs text-rose-400/80">

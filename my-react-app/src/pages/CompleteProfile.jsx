@@ -854,8 +854,12 @@ export default function CompleteProfile() {
           || '',
       };
 
+      const token = sessionStorage.getItem('accessToken');
       const response = await axios.put(`${API_URL}/api/users/${user.id || user._id}/profile`, payload, {
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         withCredentials: true,
       });
 

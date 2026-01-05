@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState, useContext } from 'react';
 import { Heart, MessageCircle, Send, X, Trash2, MoreHorizontal, Image, XCircle } from 'lucide-react'; 
 import { SocketContext } from '../contexts';
 import toast from 'react-hot-toast';
+import ConfirmModal from '../components/ConfirmModal';
+import InputModal from '../components/InputModal';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -34,19 +36,41 @@ export default function Community() {
   const [selectedImage, setSelectedImage] = useState(null); 
   const [previewImage, setPreviewImage] = useState(null); 
 
-  // --- Image Handling ---
-  const handleImageChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (!file.type.startsWith('image/')) {
-        toast.error('Vui lòng chọn file ảnh.');
-        return;
-      }
-      setSelectedImage(file);
-      setPreviewImage(URL.createObjectURL(file));
-    }
-  };
-  
+  // ✅ STATE CHO CONFIRM MODALS
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    type: 'default',
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  // ✅ STATE CHO REPORT MODAL
+  const [reportModal, setReportModal] = useState({
+    isOpen: false,
+    targetUser: null,
+  });
+  const [reportText, setReportText] = useState('');
+
+  const openConfirmModal = ({ type = 'default', title, message, onConfirm }) => {
+    setConfirmModal({ isOpen: true, type, title, message, onConfirm });
+  };
+
+  const closeConfirmModal = () => {
+    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+  };
+
+  // --- Image Handling ---
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        toast.error('Vui lòng chọn file ảnh.');
+        return;
+      }
+      setSelectedImage(file);
+      setPreviewImage(URL.createObjectURL(file));    }
+  };  
   const removeImage = () => {
     if (previewImage) {
       URL.revokeObjectURL(previewImage); 
@@ -238,28 +262,37 @@ export default function Community() {
       return;
     }
     
-    // Xác nhận block
-    if (type === 'block') {
-        const confirmBlock = window.confirm(
-            `Bạn có chắc chắn muốn CHẶN ${targetName} không?\nBạn sẽ không thấy bài viết/bình luận của họ nữa.`
-        );
-        if (!confirmBlock) {
-            setShowMenu({});
-            return;
-        }
+// Xác nhận block - sử dụng ConfirmModal
+    if (type === 'block') {
+        setShowMenu({});
+        openConfirmModal({
+            type: 'danger',
+            title: 'Chặn người dùng',
+            message: `Bạn có chắc chắn muốn CHẶN ${targetName} không?\nBạn sẽ không thấy bài viết/bình luận của họ nữa.`,
+            onConfirm: () => executeBlockOrReport(targetUser, 'block'),
+        });
+        return;
     }
     
-    // Lấy lý do report
-    let reason = undefined;
-    if (type === 'report') {
-        reason = prompt("Vui lòng cho biết lý do báo cáo (Không bắt buộc):");
-        if (reason === null) { // User clicked Cancel
-            setShowMenu({});
-            return;
-        }
-    }
-    
-    const endpointPath = type === 'block' ? `block/${targetId}` : `report/${targetId}`;
+    // Báo cáo - sử dụng InputModal
+    if (type === 'report') {
+        setShowMenu({});
+        setReportText('');
+        setReportModal({
+            isOpen: true,
+            targetUser: targetUser,
+        });
+        return;
+    }
+  };
+
+  // ✅ FUNCTION THỰC HIỆN BLOCK/REPORT
+  const executeBlockOrReport = async (targetUser, type, reason) => {
+    const targetId = (targetUser?._id || targetUser?.id || targetUser)?.toString();
+    const targetName = targetUser?.name || 'người dùng này';
+    const currentUserId = (storedUser?.id || storedUser?._id)?.toString();
+
+    const endpointPath = type === 'block' ? `block/${targetId}` : `report/${targetId}`;
     const apiUrl = `${API_URL}/api/users/${endpointPath}`;
     
     const requestBody = {
@@ -498,13 +531,20 @@ export default function Community() {
   };
 
   // ==============================
-  // DELETE POST - giữ nguyên
-  // ==============================
-  const deletePost = async (postId) => {
-    if (!window.confirm('Bạn chắc chắn muốn xóa bài viết này?')) return;
+  // DELETE POST
+  // ==============================
+  const deletePost = (postId) => {
+    openConfirmModal({
+      type: 'danger',
+      title: 'Xóa bài viết',
+      message: 'Bạn chắc chắn muốn xóa bài viết này?',
+      onConfirm: () => executeDeletePost(postId),
+    });
+  };
 
-    try {
-      const res = await fetch(`${API_URL}/api/posts/${postId}`, {
+  const executeDeletePost = async (postId) => {
+    try {
+      const res = await fetch(`${API_URL}/api/posts/${postId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
@@ -526,13 +566,20 @@ export default function Community() {
   };
 
   // ==============================
-  // DELETE COMMENT - giữ nguyên
-  // ==============================
-  const deleteComment = async (commentId, postId) => {
-    if (!window.confirm('Xóa bình luận này?')) return;
+  // DELETE COMMENT
+  // ==============================
+  const deleteComment = (commentId, postId) => {
+    openConfirmModal({
+      type: 'danger',
+      title: 'Xóa bình luận',
+      message: 'Bạn có chắc chắn muốn xóa bình luận này?',
+      onConfirm: () => executeDeleteComment(commentId, postId),
+    });
+  };
 
-    try {
-      const res = await fetch(`${API_URL}/api/comments/${commentId}`, {
+  const executeDeleteComment = async (commentId, postId) => {
+    try {
+      const res = await fetch(`${API_URL}/api/comments/${commentId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
@@ -566,6 +613,39 @@ export default function Community() {
 
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-[#fff4f6] via-[#fff8fb] to-[#fffaf6]">
+			{/* CONFIRM MODAL */}
+			<ConfirmModal
+				isOpen={confirmModal.isOpen}
+				onClose={closeConfirmModal}
+				onConfirm={confirmModal.onConfirm}
+				title={confirmModal.title}
+				message={confirmModal.message}
+				type={confirmModal.type}
+				confirmText="Xác nhận"
+				cancelText="Hủy"
+			/>
+
+			{/* REPORT MODAL */}
+			<InputModal
+				isOpen={reportModal.isOpen}
+				onClose={() => {
+					setReportModal({ isOpen: false, targetUser: null });
+					setReportText('');
+				}}
+				title={`Báo cáo ${reportModal.targetUser?.name || 'người dùng'}`}
+				message="Vui lòng mô tả lý do bạn báo cáo người này."
+				placeholder="Nội dung báo cáo (không bắt buộc)"
+				confirmText="Gửi báo cáo"
+				cancelText="Hủy"
+				value={reportText}
+				onChange={setReportText}
+				onSubmit={(reason) => {
+					executeBlockOrReport(reportModal.targetUser, 'report', reason);
+					setReportModal({ isOpen: false, targetUser: null });
+					setReportText('');
+				}}
+			/>
+
 			<div className="mx-auto max-w-2xl px-4 pt-28 pb-16">
         {/* HEADER */}
         <div className="mb-6">
@@ -694,7 +774,7 @@ export default function Community() {
                             <button
                               onClick={() => handleBlockOrReport(post.userId, 'report')}
                               disabled={actionLoading}
-                              className="w-full px-4 py-2 text-left text-sm hover:bg-rose-50 disabled:opacity-60 transition"
+                              className="w-full px-4 py-2 text-left text-sm  hover:bg-rose-50 disabled:opacity-60 transition"
                             >
                               Báo cáo người dùng
                             </button>
