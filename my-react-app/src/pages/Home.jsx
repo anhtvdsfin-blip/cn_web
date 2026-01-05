@@ -95,6 +95,7 @@ export default function Home() {
     }
 
     const controller = new AbortController();
+    let abortControllerRef = controller;
 
     const fetchDeck = async () => {
       setIsLoadingDeck(true);
@@ -121,7 +122,7 @@ export default function Home() {
         const response = await fetch(url, {
           method: 'GET',
           credentials: 'include',
-          signal: controller.signal,
+          signal: abortControllerRef.signal,
         });
 
         if (!response.ok) {
@@ -137,11 +138,11 @@ export default function Home() {
         setActiveIndex(0);
         setHistory([]);
       } catch (error) {
-        if (controller.signal.aborted) return;
+        if (abortControllerRef.signal.aborted) return;
         console.error('Fetch swipe deck failed:', error);
         setDeckError(error.message || 'Không thể tải dữ liệu tìm kiếm.');
       } finally {
-        if (!controller.signal.aborted) {
+        if (!abortControllerRef.signal.aborted) {
           setIsLoadingDeck(false);
         }
       }
@@ -149,10 +150,21 @@ export default function Home() {
 
     fetchDeck();
 
+    // Expose fetchDeck to window for manual refresh
+    window.__refreshDeck = fetchDeck;
+
     return () => {
       controller.abort();
+      delete window.__refreshDeck;
     };
   }, [API_URL, userId, appliedFilters]);
+
+  // Function to manually refresh deck
+  const refreshDeck = () => {
+    if (window.__refreshDeck) {
+      window.__refreshDeck();
+    }
+  };
 
   useEffect(() => {
     setPhotoIndex(0);
@@ -737,6 +749,13 @@ export default function Home() {
                               <p className="mt-3 text-sm leading-relaxed text-rose-400">
                                 Hãy quay lại vào lúc khác để gặp thêm những tâm hồn đẹp nhé!
                               </p>
+                              <button
+                                onClick={refreshDeck}
+                                disabled={isLoadingDeck}
+                                className="mt-6 rounded-full bg-gradient-to-r from-rose-400 to-pink-400 px-8 py-3 text-sm font-semibold text-white shadow-lg hover:from-rose-500 hover:to-pink-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                              >
+                                {isLoadingDeck ? 'Đang tải...' : '🔄 Tải lại danh sách'}
+                              </button>
                             </div>
                           </div>
                           {deckError && (

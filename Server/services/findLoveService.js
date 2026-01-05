@@ -155,6 +155,16 @@ const fetchMatchedUserIds = async (userId) => {
   });
 };
 
+// 👍 Fetch users that current user has already LIKED (pending, not matched yet)
+const fetchLikedUserIds = async (userId) => {
+  const likes = await Swipe.find({
+    swiperId: userId,
+    actionType: 'like'
+  }).distinct('swipedId');
+  
+  return likes.map((id) => id.toString());
+};
+
 // ⏰ Fetch users disliked in last 24 hours (will be available again after 24h)
 const fetchRecentDislikesUserIds = async (userId) => {
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -272,8 +282,9 @@ export const findLoveService = {
 
     const normalizedCurrentUser = buildUserResponse(userDoc);
     
-    // Exclude: matched users + recent left swipes (24h) + blocked users
+    // Exclude: matched users + liked users (pending) + recent dislikes (24h) + blocked users
     const matchedIds = await fetchMatchedUserIds(userId);
+    const likedIds = await fetchLikedUserIds(userId);  // 👈 NEW: exclude already liked users
     const recentDislikeIds = await fetchRecentDislikesUserIds(userId);
 
     // Users this user has blocked (from their document)
@@ -283,8 +294,9 @@ export const findLoveService = {
     const blockedThisUser = await User.find({ blockedUsers: userId }).distinct('_id').lean().catch(() => []);
     const blockedThisUserIds = Array.isArray(blockedThisUser) ? blockedThisUser.map(String) : [];
 
-    const excludeIds = [...new Set([...
-      matchedIds,
+    const excludeIds = [...new Set([
+      ...matchedIds,
+      ...likedIds,          // 👈 NEW: don't show users you already liked
       ...recentDislikeIds,
       ...blockedByUser,
       ...blockedThisUserIds,
