@@ -78,14 +78,11 @@ export const refreshToken = catchAsync(async (req, res) => {
         return res.status(httpStatus.UNAUTHORIZED).send({ message: 'Không tìm thấy Refresh Token.' });
     }
 
-    // Xác thực và tạo token mới
-    const tokens = await AuthService.refreshTokens(refreshToken);
-    res.cookie('refreshToken', tokens.refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 30 * 24 * 60 * 60 * 1000 
-    });
-
-    res.send({ accessToken: tokens.accessToken });
-}
-);
+    // Import AuthService để sử dụng refreshAccessToken
+    const { refreshAccessToken } = await import('../services/AuthService.js');
+    
+    // Xác thực và tạo access token mới
+    const accessToken = await refreshAccessToken(refreshToken);
+    
+    res.send({ accessToken });
+});

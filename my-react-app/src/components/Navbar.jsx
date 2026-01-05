@@ -153,11 +153,6 @@ export default function Navbar({ user: controlledUser, socket, unreadCount = 0 }
                 )}
               </button>
 
-              <NotificationPanel
-                isOpen={showNotifications}
-                onClose={() => setShowNotifications(false)}
-              />
-
               <div className="relative">
                 <button
                   onClick={() => setShowDropdown((prev) => !prev)}
@@ -214,6 +209,12 @@ export default function Navbar({ user: controlledUser, socket, unreadCount = 0 }
         </button>
       </div>
 
+      {/* Notification Panel - works for both mobile and desktop */}
+      <NotificationPanel
+        isOpen={showNotifications}
+        onClose={() => setShowNotifications(false)}
+      />
+
       {mobileOpen && (
         <div className="md:hidden">
           <div className="space-y-4 border-t border-rose-100/70 bg-white/95 px-4 py-6 text-sm font-semibold text-slate-700 shadow-lg">
@@ -248,10 +249,26 @@ export default function Navbar({ user: controlledUser, socket, unreadCount = 0 }
                       {user.name?.charAt(0)?.toUpperCase() || "H"}
                     </div>
                   )}
-                  <div>
+                  <div className="flex-1">
                     <p className="text-sm font-semibold text-slate-700">{user.name}</p>
                     <Link to="/profile" className="text-xs text-teal-500">Xem hồ sơ</Link>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNotifications(!showNotifications);
+                      setMobileOpen(false);
+                    }}
+                    className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-400 transition hover:border-rose-300 hover:text-rose-500"
+                    aria-label="Thông báo"
+                  >
+                    <Bell className="h-5 w-5" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
+                  </button>
                 </div>
                 <div className="flex gap-3">
                   <Link

@@ -43,10 +43,14 @@ export const setCrush = async (req, res) => {
       return res.status(403).json({ success: false, message: 'User is not part of this match' });
     }
 
-    // Check mutual crush
-    if (!match.isMutualCrush && match.isCrushStatusA && match.isCrushStatusB) {
+    // Check mutual crush - track if it BECOMES mutual (was false, now true)
+    const wasMutual = match.isMutualCrush;
+    if (match.isCrushStatusA && match.isCrushStatusB) {
       match.isMutualCrush = true;
-      becameMutual = true;
+      // Only trigger notification if it JUST became mutual (wasn't mutual before)
+      becameMutual = !wasMutual;
+    } else {
+      match.isMutualCrush = false;
     }
 
     if (updated || becameMutual) await match.save();

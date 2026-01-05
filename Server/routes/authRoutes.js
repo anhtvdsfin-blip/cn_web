@@ -1,5 +1,5 @@
 import express from 'express';
-import { register, login } from '../controllers/authController.js';
+import { register, login, logout, refreshToken } from '../controllers/authController.js';
 import { body, validationResult } from 'express-validator';
 
 const router = express.Router();
@@ -34,7 +34,7 @@ router.post(
 	login
 );
 
-// router.post('/logout', logout); // Sẽ thêm sau
-// router.post('/refresh-token', refreshTokens); // Sẽ thêm sau
+router.post('/logout', logout);
+router.post('/refresh', refreshToken);
 
 export default router;

@@ -13,6 +13,7 @@ export const initNotificationSocket = (io) => {
     // Auth User for Notifications
     // ==========================================
     socket.on('auth_notification', ({ userId }) => {
+      console.log(`📥 Received auth_notification event from socket ${socket.id} with userId:`, userId);
       if (!userId) {
         console.log('❌ auth_notification received empty userId');
         return;
@@ -20,7 +21,8 @@ export const initNotificationSocket = (io) => {
 
       socket.data.userId = userId.toString();
       socket.join(`notifications_${userId}`);
-      console.log(`🔔 User ${userId} joined notification room`);
+      console.log(`🔔 User ${userId} joined notification room notifications_${userId}`);
+      console.log(`📊 Socket ${socket.id} is now in rooms:`, Array.from(socket.rooms));
     });
 
     // ==========================================

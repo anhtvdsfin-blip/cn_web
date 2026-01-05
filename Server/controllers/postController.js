@@ -231,10 +231,11 @@ export const createComment = async (req, res) => {
     await post.save();
 
     // 🔔 Notification
+    let notification = null;
     if (parentCommentId) {
       const parent = await Comment.findById(parentCommentId);
       if (parent && parent.userId.toString() !== userId) {
-        await createNotification({
+        notification = await createNotification({
           recipientId: parent.userId,
           senderId: userId,
           type: 'reply',
@@ -244,7 +245,7 @@ export const createComment = async (req, res) => {
         });
       }
     } else if (post.userId.toString() !== userId) {
-      await createNotification({
+      notification = await createNotification({
         recipientId: post.userId,
         senderId: userId,
         type: 'comment',
@@ -252,6 +253,18 @@ export const createComment = async (req, res) => {
         commentId: comment._id,
         content: 'đã bình luận bài viết của bạn'
       });
+    }
+
+    // 🔔 Emit notification qua socket
+    if (notification) {
+      // Populate notification để gửi đầy đủ thông tin
+      await notification.populate('senderId', 'name avatar');
+      await notification.populate('postId', 'content');
+      
+      const recipientId = notification.recipientId.toString();
+      console.log(`📤 Emitting notification to notifications_${recipientId}`, notification);
+      
+      io.to(`notifications_${recipientId}`).emit('new_notification', notification);
     }
 
     // 🔴 REALTIME: comment mới

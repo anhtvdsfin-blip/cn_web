@@ -16,11 +16,12 @@ import YourCrush from './pages/YourCrush';
 import { io } from "socket.io-client";
 import { useState, useEffect } from "react";
 import { SocketContext, UserContext } from "./contexts";
-import axios from "axios";
+import axios from "./utils/axiosConfig";
 
 const BlankPage = () => <div className="min-h-screen bg-white pt-24" />;
 
 function App() {
+  const navigate = useNavigate();
   const [socket, setSocket] = useState(null);
   const [user, setUser] = useState(null);
   const [notifications, setNotifications] = useState([]);
@@ -64,6 +65,19 @@ function App() {
     return () => window.removeEventListener("userChanged", handleUserChange);
   }, []);
 
+  // Listen for session expiration from axios interceptor
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      console.log('🔐 Session expired, logging out...');
+      setUser(null);
+      setSocket(null);
+      navigate('/login');
+    };
+
+    window.addEventListener('sessionExpired', handleSessionExpired);
+    return () => window.removeEventListener('sessionExpired', handleSessionExpired);
+  }, [navigate]);
+
   useEffect(() => {
     if (!user) return;
 
@@ -80,11 +94,16 @@ function App() {
         console.warn('user:join emit failed', e);
       }
       try {
-        const token = sessionStorage.getItem('accessToken');
-        if (token) newSocket.emit('auth_user', { token });
-        else newSocket.emit('auth_user', { userId: user.id }); // fallback
+        // Use userId for socket auth (persistent connection doesn't work well with short-lived JWT)
+        newSocket.emit('auth_user', { userId: user.id });
       } catch (e) {
         console.warn('auth_user emit failed', e);
+      }
+      try {
+        // Join notification room to receive notification events
+        newSocket.emit('auth_notification', { userId: user.id });
+      } catch (e) {
+        console.warn('auth_notification emit failed', e);
       }
       try {
         newSocket.emit('join_conversations', user.id); // ensure join of user_<id> room for chat messages
@@ -138,6 +157,7 @@ function App() {
     socket.on('mutual_match', handleMutualNavigate);
 
     const handleNewNotification = ({ notification }) => {
+      console.log('🔔 Received new_notification event:', notification);
       // Add new notification to top of array
       setNotifications(prev => [notification, ...prev]);
       // Increment unread if not read
@@ -191,8 +211,6 @@ function App() {
       socket.off('mutual_match', handleMutualNavigate);
     };
   }, [socket, user?.id]);
-
-  const navigate = useNavigate();
 
   return (
     <UserContext.Provider value={{ user, setUser }}>

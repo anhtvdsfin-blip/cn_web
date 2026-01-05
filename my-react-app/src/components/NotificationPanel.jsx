@@ -13,9 +13,25 @@ export default function NotificationPanel({ isOpen, onClose }) {
 
   const handleMarkAsRead = async (notificationId) => {
     try {
+      // Validate notificationId
+      if (!notificationId) {
+        console.warn('⚠️ No notification ID provided');
+        return { success: false, error: 'No ID' };
+      }
+
       // Some notifications are local-only (generated client-side) and use synthetic ids like 'm-<ts>'.
       // These are not stored in the server DB so avoid calling backend for them.
       if (typeof notificationId === 'string' && notificationId.startsWith('m-')) {
+        setNotifications?.(prev => prev.map(n => n._id === notificationId ? { ...n, isRead: true } : n));
+        setUnreadCount?.(prev => Math.max(0, prev - 1));
+        return { success: true, local: true };
+      }
+
+      // Validate MongoDB ObjectId format (24 hex characters)
+      const objectIdRegex = /^[0-9a-fA-F]{24}$/;
+      if (!objectIdRegex.test(notificationId.toString())) {
+        console.warn('⚠️ Invalid notification ID format:', notificationId);
+        // Mark as read locally anyway
         setNotifications?.(prev => prev.map(n => n._id === notificationId ? { ...n, isRead: true } : n));
         setUnreadCount?.(prev => Math.max(0, prev - 1));
         return { success: true, local: true };
@@ -32,6 +48,9 @@ export default function NotificationPanel({ isOpen, onClose }) {
       return res.data;
     } catch (error) {
       console.error('❌ Error marking notification as read:', error);
+      // Mark as read locally anyway to improve UX
+      setNotifications?.(prev => prev.map(n => n._id === notificationId ? { ...n, isRead: true } : n));
+      setUnreadCount?.(prev => Math.max(0, prev - 1));
       return { success: false, error };
     }
   };
@@ -69,8 +88,23 @@ export default function NotificationPanel({ isOpen, onClose }) {
       handleMarkAsRead(notification._id);
     }
 
+    // If comment or reply notification, navigate to Community page
+    if ((notification.type === 'comment' || notification.type === 'reply') && notification.postId) {
+      onClose?.();
+      const postId = notification.postId._id || notification.postId;
+      navigate(`/community?postId=${postId}`);
+      return;
+    }
+
     // If match notification, navigate to conversation
     if (notification.type === 'match' && notification.matchId) {
+      onClose?.();
+      navigate(`/messenger?matchId=${notification.matchId._id || notification.matchId}`);
+      return;
+    }
+
+    // If mutual BK crush notification, navigate to messenger
+    if (notification.type === 'mutual_bk_crush' && notification.matchId) {
       onClose?.();
       navigate(`/messenger?matchId=${notification.matchId._id || notification.matchId}`);
       return;
@@ -131,7 +165,9 @@ export default function NotificationPanel({ isOpen, onClose }) {
                   key={notif._id}
                   onClick={() => handleNotificationClick(notif)}
                   className={`p-4 cursor-pointer transition ${
-                    !notif.isRead
+                    notif.type === 'mutual_bk_crush'
+                      ? 'bg-gradient-to-r from-rose-50 to-pink-50 hover:from-rose-100 hover:to-pink-100'
+                      : !notif.isRead
                       ? 'bg-blue-50 hover:bg-blue-100'
                       : 'bg-white hover:bg-slate-50'
                   }`}
@@ -154,8 +190,32 @@ export default function NotificationPanel({ isOpen, onClose }) {
                     </div>
                   )}
 
+                  {/* Mutual BK Crush Notification */}
+                  {notif.type === 'mutual_bk_crush' && (
+                    <div className="flex items-start gap-3">
+                      <div className="relative flex-shrink-0">
+                        <span className="text-3xl mt-1 animate-pulse">💖</span>
+                        <span className="absolute -top-1 -right-1 text-xl">✨</span>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-rose-600 font-bold text-sm">
+                          🎉 Chúc mừng! Mutual Crush!
+                        </p>
+                        <p className="text-slate-900 font-medium mt-0.5">
+                          {notif.content}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {formatTime(notif.createdAt)}
+                        </p>
+                      </div>
+                      {!notif.isRead && (
+                        <div className="h-2 w-2 rounded-full bg-rose-500 flex-shrink-0 mt-2 animate-pulse" />
+                      )}
+                    </div>
+                  )}
+
                   {/* Other Notification Types */}
-                  {notif.type !== 'match' && (
+                  {notif.type !== 'match' && notif.type !== 'mutual_bk_crush' && (
                     <div className="flex items-start gap-3">
                       <span className="text-2xl mt-1">📬</span>
                       <div className="flex-1">

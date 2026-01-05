@@ -82,9 +82,33 @@ socket.on("auth_user", async ({ token, userId }) => {
         let bestIndex = -1;
         let bestCompatibility = null;
 
+        const currentUserId = userData._id || userData.id;
+
         for (let i = 0; i < waitingQueue.length; i++) {
           const candidate = waitingQueue[i];
           if (candidate.socketId === socket.id) continue;
+
+          const candidateId = candidate._id || candidate.id;
+
+          // ✅ KIỂM TRA XEM 2 NGƯỜI ĐÃ MATCH CHƯA
+          const [u1, u2] = canonicalPair(currentUserId, candidateId);
+          
+          console.log(`🔍 Checking match between ${userData.name} (${currentUserId}) and ${candidate.name} (${candidateId})`);
+          console.log(`🔍 Canonical pair: u1=${u1}, u2=${u2}`);
+          
+          const existingMatch = await Match.findOne({
+            user1Id: u1,
+            user2Id: u2,
+            matchedAt: { $ne: null } // Chỉ check những match đã hoàn thành (cả 2 đã like)
+          });
+
+          if (existingMatch) {
+            console.log(`⚠️ SKIP ${candidate.name} - Already matched with ${userData.name} at ${existingMatch.matchedAt}`);
+            console.log(`   Match status: ${existingMatch.status}, conversationId: ${existingMatch.conversationId}`);
+            continue; // Bỏ qua người này, tìm người khác
+          } else {
+            console.log(`✅ No existing match found - can pair ${userData.name} with ${candidate.name}`);
+          }
 
           const compatibility = await matchingService.calculateCompatibility(
             {

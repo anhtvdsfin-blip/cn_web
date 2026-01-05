@@ -79,8 +79,10 @@ const computeDobRange = (ageRange) => {
   const maxAge = Math.max(minAge + 1, ageRange.max);
 
   const today = new Date();
-  const latestDob = new Date(today.getFullYear() - minAge, today.getMonth(), today.getDate() + 1);
-  const earliestDob = new Date(today.getFullYear() - maxAge, today.getMonth(), today.getDate());
+  // Person with minAge: born from (today - minAge - 1 year + 1 day) to (today - minAge year)
+  // Person with maxAge: born from (today - maxAge - 1 year + 1 day) to (today - maxAge year)
+  const latestDob = new Date(today.getFullYear() - minAge, today.getMonth(), today.getDate());
+  const earliestDob = new Date(today.getFullYear() - maxAge - 1, today.getMonth(), today.getDate() + 1);
 
   return { earliestDob, latestDob };
 };
@@ -159,7 +161,7 @@ const fetchRecentDislikesUserIds = async (userId) => {
   
   const dislikes = await Swipe.find({
     swiperId: userId,
-    action: 'dislike',
+    actionType: 'dislike',
     createdAt: { $gte: oneDayAgo }
   }).distinct('swipedId');
   
@@ -236,7 +238,7 @@ const createOrUpdateMatch = async (userId, targetId, compatibility) => {
 
   if (existing) {
     await Match.updateOne({ _id: existing._id }, { $set: matchUpdate });
-    return existing._id;
+    return { matchId: existing._id, isNewMatch: false };
   }
 
   // Fetch users' selected opening moves (may be null)
@@ -256,7 +258,7 @@ const createOrUpdateMatch = async (userId, targetId, compatibility) => {
     { new: true, upsert: true, setDefaultsOnInsert: true }
   );
 
-  return created._id;
+  return { matchId: created._id, isNewMatch: true };
 };
 
 export const findLoveService = {
@@ -343,7 +345,7 @@ export const findLoveService = {
         .exec();
     } else {
       rawCandidates = await User.find(candidateQuery)
-        .sort({ updatedAt: -1 })
+        .sort({ createdAt: -1, updatedAt: -1 })
         .limit(Math.max(limit * 3, MAX_CANDIDATE_POOL))
         .exec();
     }
@@ -357,14 +359,8 @@ export const findLoveService = {
       // ignore logging errors
     }
 
-    if (!rawCandidates.length) {
-      candidateQuery = buildCandidateQuery(userDoc, excludeIds, { strictProfile: false });
-      rawCandidates = await User.find(candidateQuery)
-        .sort({ updatedAt: -1 })
-        .limit(Math.max(limit * 2, MAX_CANDIDATE_POOL))
-        .exec();
-    }
-
+    // If no candidates found with strict filters, return empty deck
+    // DO NOT fallback to ignore filters - user expects filtered results only
     if (!rawCandidates.length) {
       return { deck: [], total: 0 };
     }
@@ -468,20 +464,25 @@ export const findLoveService = {
     ];
 
     const compatibility = await buildMatchPayload(normalizedSwiper, normalizedTarget);
-    const matchId = await createOrUpdateMatch(userId, targetUserId, compatibility);
+    const { matchId, isNewMatch } = await createOrUpdateMatch(userId, targetUserId, compatibility);
 
     // ============ CREATE MATCH NOTIFICATIONS ============
+    // Only create notifications for NEW matches to avoid duplicates
     let notifications = null;
-    try {
-      notifications = await notificationService.createMatchNotifications(
-        userId,
-        targetUserId,
-        matchId
-      );
-      console.log(`✅ Match notifications created for match: ${matchId}`);
-    } catch (error) {
-      console.error('❌ Error creating match notifications:', error);
-      // Don't throw - notifications are secondary feature
+    if (isNewMatch) {
+      try {
+        notifications = await notificationService.createMatchNotifications(
+          userId,
+          targetUserId,
+          matchId
+        );
+        console.log(`✅ Match notifications created for match: ${matchId}`);
+      } catch (error) {
+        console.error('❌ Error creating match notifications:', error);
+        // Don't throw - notifications are secondary feature
+      }
+    } else {
+      console.log(`ℹ️ Match ${matchId} already exists, skipping notification creation`);
     }
 
     return {
