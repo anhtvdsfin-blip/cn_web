@@ -88,8 +88,14 @@ export default function Register() {
       }
     } catch (err) {
       console.error("❌ Lỗi khi gửi request:", err);
-      const errorMessage =
-        err.response?.data?.message || err.message || "Lỗi kết nối tới server!";
+      
+      // Xử lý lỗi từ express-validator (trả về mảng errors)
+      let errorMessage;
+      if (err.response?.data?.errors && Array.isArray(err.response.data.errors)) {
+        errorMessage = err.response.data.errors.map(e => e.msg).join(", ");
+      } else {
+        errorMessage = err.response?.data?.message || err.message || "Lỗi kết nối tới server!";
+      }
       setMessage({ type: "error", text: errorMessage });
     } finally {
       setIsSubmitting(false);

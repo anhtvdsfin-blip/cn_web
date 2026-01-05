@@ -106,7 +106,16 @@ export default function Login() {
     } catch (err) {
       console.error("❌ Lỗi đăng nhập:", err);
       console.error("❌ Response:", err.response?.data);
-      setMessage(err.response?.data?.message || "Lỗi kết nối tới server!");
+      
+      // Xử lý lỗi từ express-validator (trả về mảng errors)
+      if (err.response?.data?.errors && Array.isArray(err.response.data.errors)) {
+        // Lấy message từ lỗi đầu tiên hoặc ghép tất cả
+        const errorMessages = err.response.data.errors.map(e => e.msg).join(", ");
+        setMessage(errorMessages);
+      } else {
+        // Lỗi thông thường (message đơn)
+        setMessage(err.response?.data?.message || "Lỗi kết nối tới server!");
+      }
     }
   };
 
