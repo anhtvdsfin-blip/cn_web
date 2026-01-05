@@ -2,6 +2,7 @@ import React, { useEffect, useState, useContext, useMemo, useCallback } from 're
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { X, Plus, Info } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { UserContext } from '../contexts';
 
 export default function LibraryInvite() {
@@ -140,7 +141,7 @@ export default function LibraryInvite() {
   }, [rooms, debouncedSearch]);
 
   const joinRoom = useCallback(async (roomId) => {
-    if (!ctxUser) return alert('Vui lòng đăng nhập để vào phòng.');
+    if (!ctxUser) return toast.error('Vui lòng đăng nhập để vào phòng.');
     try {
       const res = await fetch(`${API_BASE || ''}/api/library/rooms/${roomId}/join`, {
         method: 'POST',
@@ -150,7 +151,7 @@ export default function LibraryInvite() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         const msg = data?.message || data?.error || 'Không thể vào phòng.';
-        return alert(msg);
+        return toast.error(msg);
       }
 
       // server returns updated room; normalize and update state
@@ -165,12 +166,12 @@ export default function LibraryInvite() {
       setRooms((prev) => prev.map((it) => (String(it.id) === String(id) ? normalized : it)));
     } catch (err) {
       console.error('Join room failed:', err);
-      alert('Không thể vào phòng. Vui lòng thử lại.');
+      toast.error('Không thể vào phòng. Vui lòng thử lại.');
     }
   }, [ctxUser, API_BASE]);
 
   const deleteRoom = useCallback(async (roomId) => {
-    if (!ctxUser) return alert('Vui lòng đăng nhập.');
+    if (!ctxUser) return toast.error('Vui lòng đăng nhập.');
     try {
       const res = await fetch(`${API_BASE || ''}/api/library/rooms/${roomId}`, {
         method: 'DELETE',
@@ -264,8 +265,8 @@ export default function LibraryInvite() {
     const name = createName.trim();
     const subject = createSubject.trim();
     const capacity = Number(createCapacity) || 0;
-    if (!name) return alert('Vui lòng nhập tên phòng.');
-    if (capacity <= 0) return alert('Số thành viên phải lớn hơn 0.');
+    if (!name) return toast.error('Vui lòng nhập tên phòng.');
+    if (capacity <= 0) return toast.error('Số thành viên phải lớn hơn 0.');
     const newRoom = {
       id: String(Date.now()),
       name,
@@ -379,7 +380,7 @@ export default function LibraryInvite() {
   }, [toast]);
 
   async function handleModalSend() {
-    if (!selectedUserId) return alert('Vui lòng chọn một người để mời.');
+    if (!selectedUserId) return toast.error('Vui lòng chọn một người để mời.');
     if (!modalRoom) return;
 
     try {
@@ -394,19 +395,19 @@ export default function LibraryInvite() {
       });
 
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return alert(data.message || 'Gửi lời mời thất bại.');
+      if (!res.ok) return toast.error(data.message || 'Gửi lời mời thất bại.');
 
       // On success, close modal and refresh
       closeInviteModal();
       setToast({ msg: 'Gửi lời mời thành công!', type: 'success' });
     } catch (err) {
       console.error('Send invite failed:', err);
-      alert('Gửi lời mời thất bại. Vui lòng thử lại.');
+      toast.error('Gửi lời mời thất bại. Vui lòng thử lại.');
     }
   }
 
   async function acceptInvite(roomId, inviteId) {
-    if (!ctxUser) return alert('Vui lòng đăng nhập.');
+    if (!ctxUser) return toast.error('Vui lòng đăng nhập.');
     try {
       const res = await fetch(`${API_BASE || ''}/api/library/rooms/${roomId}/invites/${inviteId}/accept`, {
         method: 'POST',
@@ -414,7 +415,7 @@ export default function LibraryInvite() {
         body: JSON.stringify({ userId: ctxUser.id || ctxUser._id }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return alert(data.message || 'Chấp nhận lời mời thất bại.');
+      if (!res.ok) return toast.error(data.message || 'Chấp nhận lời mời thất bại.');
 
       // On success, refresh rooms list to update occupants
       const listRes = await fetch(`${API_BASE || ''}/api/library/rooms`);
@@ -436,12 +437,12 @@ export default function LibraryInvite() {
       setInvites((s) => s.filter((inv) => !(inv.roomId === roomId && inv._id === inviteId)));
     } catch (err) {
       console.error('Accept invite failed:', err);
-      alert('Chấp nhận lời mời thất bại. Vui lòng thử lại.');
+      toast.error('Chấp nhận lời mời thất bại. Vui lòng thử lại.');
     }
   }
 
   async function rejectInvite(roomId, inviteId) {
-    if (!ctxUser) return alert('Vui lòng đăng nhập.');
+    if (!ctxUser) return toast.error('Vui lòng đăng nhập.');
     try {
       const res = await fetch(`${API_BASE || ''}/api/library/rooms/${roomId}/invites/${inviteId}/reject`, {
         method: 'POST',
@@ -449,13 +450,13 @@ export default function LibraryInvite() {
         body: JSON.stringify({ userId: ctxUser.id || ctxUser._id }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return alert(data.message || 'Từ chối lời mời thất bại.');
+      if (!res.ok) return toast.error(data.message || 'Từ chối lời mời thất bại.');
 
       // Remove the rejected invite from display
       setInvites((s) => s.filter((inv) => !(inv.roomId === roomId && inv._id === inviteId)));
     } catch (err) {
       console.error('Reject invite failed:', err);
-      alert('Từ chối lời mời thất bại. Vui lòng thử lại.');
+      toast.error('Từ chối lời mời thất bại. Vui lòng thử lại.');
     }
   }
 
@@ -567,7 +568,7 @@ export default function LibraryInvite() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => {
-                            if (!room.joined) return alert('Bạn phải vào phòng trước mới có thể mời người khác.');
+                            if (!room.joined) return toast.error('Bạn phải vào phòng trước mới có thể mời người khác.');
                             openInviteModal(room);
                           }}
                           disabled={isFull || !room.joined}
@@ -653,7 +654,7 @@ export default function LibraryInvite() {
                     >
                       <option value="">-- Chọn người --</option>
                       {matchedUsers.map(user => (
-                        <option key={user._id || user.id} value={user._id || user.id}>
+                        <option key={user.userId || user.id || user._id} value={user.userId || user.id}>
                           {user.name}
                         </option>
                       ))}

@@ -9,8 +9,11 @@ import {
   RotateCcw,
   Sparkles,
   X as XIcon,
+  SlidersHorizontal,
 } from 'lucide-react';
 import OtherProfileCard from '../components/OtherProfileCard';
+import ConfirmModal from '../components/ConfirmModal';
+import InputModal from '../components/InputModal';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -51,6 +54,12 @@ export default function Home() {
   const [appliedFilters, setAppliedFilters] = useState({});
   const [showFilters, setShowFilters] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [showMobileNotifications, setShowMobileNotifications] = useState(false);
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [pendingActionType, setPendingActionType] = useState(null);
 
   const activeProfile = matchQueue[activeIndex];
   const deferredProfile = useDeferredValue(activeProfile);
@@ -249,6 +258,19 @@ export default function Home() {
 
   const handleBlockOrReport = async (type) => {
     if (!activeProfile || actionLoading) return;
+    
+    if (type === 'block') {
+      setPendingActionType('block');
+      setShowBlockConfirm(true);
+    } else if (type === 'report') {
+      setPendingActionType('report');
+      setShowReportModal(true);
+      setReportReason('');
+    }
+  };
+
+  const executeBlockOrReport = async (type, reason = null) => {
+    if (!activeProfile || actionLoading) return;
     const targetId = activeProfile.id;
     const blockerId = storedUser?.id;
 
@@ -257,23 +279,13 @@ export default function Home() {
         return;
     }
     
-    if (type === 'block') {
-        const confirmBlock = window.confirm(
-            `Bạn có chắc chắn muốn CHẶN ${activeProfile.name} không? Bạn sẽ không bao giờ thấy hồ sơ này nữa.`
-        );
-        if (!confirmBlock) {
-            setShowMenu(false);
-            return;
-        }
-    }
-    
     const endpointPath = type === 'block' ? `block/${targetId}` : `report/${targetId}`;
     const apiUrl = `${API_URL}/api/users/${endpointPath}`;
     
     const requestBody = {
         blockerId: blockerId,
         reporterId: blockerId,
-        reason: type === 'report' ? prompt("Vui lòng cho biết lý do báo cáo (Không bắt buộc):") : undefined,
+        reason: reason || undefined,
     };
 
     setActionLoading(true);
@@ -300,9 +312,7 @@ export default function Home() {
 
     } catch (error) {
         console.error("API Error:", error);
-        
         toast.error(`Thao tác thất bại: ${error.message || 'Lỗi kết nối Server.'}`);
-        
     } finally {
         setActionLoading(false);
     }
@@ -354,6 +364,205 @@ export default function Home() {
           </div>
 
           <div className="mt-12 flex w-full flex-1">
+            {/* Mobile floating buttons */}
+            <div className="fixed bottom-24 right-4 z-40 flex flex-col gap-3 lg:hidden">
+              <button
+                onClick={() => setShowMobileFilters(true)}
+                className="flex h-14 w-14 items-center justify-center rounded-full bg-rose-500 text-white shadow-lg hover:bg-rose-600"
+                aria-label="Bộ lọc"
+              >
+                <SlidersHorizontal className="h-6 w-6" />
+              </button>
+              <button
+                onClick={() => setShowMobileNotifications(true)}
+                className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-rose-500 shadow-lg hover:bg-rose-50 border border-rose-100"
+                aria-label="Sự kiện"
+              >
+                <Sparkles className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Mobile Filters Modal */}
+            {showMobileFilters && (
+              <div className="fixed inset-0 z-50 bg-black/50 lg:hidden" onClick={() => setShowMobileFilters(false)}>
+                <div 
+                  className="absolute bottom-0 left-0 right-0 max-h-[85vh] overflow-y-auto rounded-t-[28px] bg-white p-6"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="mb-4 flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-rose-500">Bộ lọc tìm kiếm</h3>
+                    <button onClick={() => setShowMobileFilters(false)} className="text-rose-400 hover:text-rose-600">
+                      <XIcon className="h-6 w-6" />
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-6">
+                    {/* Distance */}
+                    <div className="rounded-[20px] border border-rose-100 bg-white px-4 py-4 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-rose-500/90">Khoảng cách</span>
+                        <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">Trong {filters.distance}km</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="50"
+                        value={filters.distance}
+                        onChange={(e) => setFilters(prev => ({ ...prev, distance: Number(e.target.value) }))}
+                        className="mt-3 w-full accent-rose-500"
+                      />
+                    </div>
+
+                    {/* Age */}
+                    <div className="rounded-[20px] border border-rose-100 bg-white px-4 py-4 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-rose-500/90">Độ tuổi</span>
+                        <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">{filters.ageMin} - {filters.ageMax >= 30 ? '30+' : filters.ageMax} tuổi</span>
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        <input
+                          type="range"
+                          min="18"
+                          max="60"
+                          value={filters.ageMin}
+                          onChange={(e) => setFilters(prev => ({ ...prev, ageMin: Math.min(Number(e.target.value), prev.ageMax - 1) }))}
+                          className="w-full accent-rose-500"
+                        />
+                        <input
+                          type="range"
+                          min="18"
+                          max="60"
+                          value={filters.ageMax}
+                          onChange={(e) => setFilters(prev => ({ ...prev, ageMax: Math.max(Number(e.target.value), prev.ageMin + 1) }))}
+                          className="w-full accent-rose-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Height */}
+                    <div className="rounded-[20px] border border-rose-100 bg-white px-4 py-4 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-rose-500/90">Chiều cao</span>
+                        <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">{filters.heightMin}cm - {filters.heightMax >= 190 ? '190+' : filters.heightMax}cm</span>
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        <input
+                          type="range"
+                          min="140"
+                          max="210"
+                          value={filters.heightMin}
+                          onChange={(e) => setFilters(prev => ({ ...prev, heightMin: Math.min(Number(e.target.value), prev.heightMax - 1) }))}
+                          className="w-full accent-rose-500"
+                        />
+                        <input
+                          type="range"
+                          min="140"
+                          max="210"
+                          value={filters.heightMax}
+                          onChange={(e) => setFilters(prev => ({ ...prev, heightMax: Math.max(Number(e.target.value), prev.heightMin + 1) }))}
+                          className="w-full accent-rose-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Cohort */}
+                    <div className="rounded-[20px] border border-rose-100 bg-white px-4 py-4 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-rose-500/90">Khóa</span>
+                        <span className="rounded-full bg-teal-50 px-3 py-1 font-medium text-teal-500">K{filters.cohortMin} - K{filters.cohortMax}</span>
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        <input
+                          type="range"
+                          min="60"
+                          max="69"
+                          value={filters.cohortMin}
+                          onChange={(e) => setFilters(prev => ({ ...prev, cohortMin: Math.min(Number(e.target.value), prev.cohortMax) }))}
+                          className="w-full accent-rose-500"
+                        />
+                        <input
+                          type="range"
+                          min="60"
+                          max="69"
+                          value={filters.cohortMax}
+                          onChange={(e) => setFilters(prev => ({ ...prev, cohortMax: Math.max(Number(e.target.value), prev.cohortMin) }))}
+                          className="w-full accent-rose-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        onClick={() => {
+                          const payload = {
+                            distance: filters.distance,
+                            ageRange: { min: filters.ageMin, max: filters.ageMax },
+                            heightRange: { min: filters.heightMin, max: filters.heightMax },
+                            cohortRange: { min: filters.cohortMin, max: filters.cohortMax }
+                          };
+                          setAppliedFilters(payload);
+                          setShowMobileFilters(false);
+                        }}
+                        className="flex-1 rounded-full bg-rose-500 px-4 py-3 text-sm font-semibold text-white hover:bg-rose-600"
+                      >
+                        Áp dụng
+                      </button>
+                      <button
+                        onClick={() => setShowMobileFilters(false)}
+                        className="flex-1 rounded-full border border-rose-100 bg-white px-4 py-3 text-sm font-semibold text-rose-600 hover:bg-rose-50"
+                      >
+                        Hủy
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Mobile Notifications Modal */}
+            {showMobileNotifications && (
+              <div className="fixed inset-0 z-50 bg-black/50 lg:hidden" onClick={() => setShowMobileNotifications(false)}>
+                <div 
+                  className="absolute bottom-0 left-0 right-0 max-h-[70vh] overflow-y-auto rounded-t-[28px] bg-white p-6"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="mb-4 flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-rose-500">HUST Community</h3>
+                    <button onClick={() => setShowMobileNotifications(false)} className="text-rose-400 hover:text-rose-600">
+                      <XIcon className="h-6 w-6" />
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div className="rounded-[24px] border border-rose-100 bg-white p-4">
+                      <span className="text-[11px] uppercase tracking-[0.3em] text-rose-300">Upcoming events</span>
+                      <p className="mt-2 text-sm font-semibold text-slate-800">Robotics Workshop</p>
+                      <p className="text-xs text-slate-500">TQB Library · 08/12 · 18:00</p>
+                      <button className="mt-4 w-full rounded-full bg-rose-500/90 px-4 py-2 text-xs font-semibold text-white shadow-sm shadow-rose-200 transition hover:bg-rose-500">
+                        Thêm vào lịch
+                      </button>
+                    </div>
+
+                    <div className="rounded-[24px] border border-rose-100 bg-white p-5">
+                      <h4 className="text-xs font-semibold uppercase tracking-[0.32em] text-rose-400">BK Crush</h4>
+                      <p className="mt-3 text-xs leading-relaxed text-slate-600">
+                        Khám phá ai đang bí mật crush bạn và gửi lời nhắn dễ thương chỉ trong 1 chạm.
+                      </p>
+                      <button
+                        onClick={() => {
+                          setShowMobileNotifications(false);
+                          navigate('/your-crush');
+                        }}
+                        className="mt-4 w-full rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-xs font-semibold text-teal-600 transition hover:bg-teal-100"
+                      >
+                        Mở BK Crush
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="grid w-full flex-1 grid-cols-1 items-start gap-8 lg:grid-cols-[280px_minmax(0,1fr)_280px] lg:gap-10">
               <aside className="hidden w-full max-w-[280px] flex-col gap-6 rounded-[28px] border border-rose-100/70 bg-white/80 p-6 text-sm text-rose-500 shadow-[0_18px_40px_-30px_rgba(188,144,255,0.6)] lg:flex">
                 <div>
@@ -617,6 +826,43 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {/* Block Confirmation Modal */}
+      {showBlockConfirm && (
+        <ConfirmModal
+          title={`Chặn ${activeProfile?.name}?`}
+          message="Bạn sẽ không bao giờ thấy hồ sơ này nữa. Hành động này không thể hoàn tác."
+          type="danger"
+          onConfirm={() => {
+            setShowBlockConfirm(false);
+            executeBlockOrReport('block');
+          }}
+          onCancel={() => {
+            setShowBlockConfirm(false);
+            setPendingActionType(null);
+          }}
+        />
+      )}
+
+      {/* Report Modal - Input reason */}
+      {showReportModal && (
+        <InputModal
+          title={`Báo cáo ${activeProfile?.name}`}
+          message="Vui lòng cho biết lý do báo cáo (không bắt buộc)"
+          placeholder="Nhập lý do..."
+          value={reportReason}
+          onChange={(value) => setReportReason(value)}
+          onSubmit={() => {
+            setShowReportModal(false);
+            executeBlockOrReport('report', reportReason);
+          }}
+          onCancel={() => {
+            setShowReportModal(false);
+            setPendingActionType(null);
+            setReportReason('');
+          }}
+        />
+      )}
     </>
   );
 }

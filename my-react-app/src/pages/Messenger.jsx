@@ -218,13 +218,13 @@ const MessageInput = memo(function MessageInput({ value, onChange, onSend, onTyp
   );
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-b-[32px] border-t border-white/60 bg-white/80 px-5 py-4">
-      <div className="flex items-center gap-3 rounded-full border border-rose-200 bg-white/70 px-4 py-2 shadow-sm shadow-rose-100">
-        <div className="relative">
+    <form onSubmit={handleSubmit} className="rounded-b-[32px] border-t border-white/60 bg-white/80 px-3 py-3 sm:px-5 sm:py-4">
+      <div className="flex items-center gap-2 rounded-full border border-rose-200 bg-white/70 px-2 py-2 shadow-sm shadow-rose-100 sm:gap-3 sm:px-4">
+        <div className="relative flex-shrink-0">
           <button
             type="button"
             onClick={() => setPickerOpen((v) => !v)}
-            className="rounded-full p-2 text-rose-300 transition hover:bg-rose-50 hover:text-rose-400"
+            className="rounded-full p-1.5 text-rose-300 transition hover:bg-rose-50 hover:text-rose-400 sm:p-2"
             aria-label="Gửi reaction"
           >
             <Smile className="h-5 w-5" />
@@ -245,7 +245,7 @@ const MessageInput = memo(function MessageInput({ value, onChange, onSend, onTyp
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          className="rounded-full p-2 text-rose-300 transition hover:bg-rose-50 hover:text-rose-400"
+          className="flex-shrink-0 rounded-full p-1.5 text-rose-300 transition hover:bg-rose-50 hover:text-rose-400 sm:p-2"
           aria-label="Gửi ảnh"
         >
           <ImageIcon className="h-5 w-5" />
@@ -255,17 +255,18 @@ const MessageInput = memo(function MessageInput({ value, onChange, onSend, onTyp
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder="Gửi lời yêu thương..."
-          className="flex-1 bg-transparent text-sm text-slate-700 placeholder-rose-300 outline-none"
+          placeholder="Nhắn tin..."
+          className="min-w-0 flex-1 bg-transparent text-xs text-slate-700 placeholder-rose-300/80 outline-none sm:text-sm"
           autoFocus
         />
         <button
           type="submit"
           disabled={!value.trim()}
-          className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#f7b0d2] via-[#f59fb6] to-[#fdd2b7] px-5 py-2 text-sm font-semibold text-white shadow-sm shadow-rose-200 transition hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex-shrink-0 inline-flex items-center justify-center rounded-full bg-gradient-to-r from-[#f7b0d2] via-[#f59fb6] to-[#fdd2b7] p-2 text-sm font-semibold text-white shadow-sm shadow-rose-200 transition hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60 sm:gap-2 sm:px-5 sm:py-2"
+          aria-label="Gửi tin nhắn"
         >
           <Send className="h-4 w-4" />
-          Gửi
+          <span className="hidden sm:inline">Gửi</span>
         </button>
       </div>
     </form>
@@ -293,15 +294,16 @@ const ChatHeader = memo(function ChatHeader({ conversation, isTyping, showMenu, 
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <div className="hidden sm:flex">
-          <button
-            type="button"
-            onClick={() => { if (crushLoading || !onCrushToggle) return; onCrushToggle(isCrush ? 'remove' : 'set'); }}
-            className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold text-white ${isCrush ? 'bg-rose-500' : 'bg-gradient-to-br from-[#f7b0d2] to-[#fdd2b7]'} ${crushLoading ? 'opacity-70 cursor-wait' : 'hover:scale-105'}`}
-          >
-            {isCrush ? 'Crushed!!' : 'Crush'}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => { if (crushLoading || !onCrushToggle) return; onCrushToggle(isCrush ? 'remove' : 'set'); }}
+          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm ${isCrush ? 'bg-rose-500' : 'bg-gradient-to-br from-[#f7b0d2] to-[#fdd2b7]'} ${crushLoading ? 'opacity-70 cursor-wait' : 'hover:scale-105'} sm:gap-2 sm:px-3 sm:py-2`}
+          aria-label={isCrush ? 'Đã Crush' : 'Thêm Crush'}
+        >
+          <Heart className="h-3.5 w-3.5 sm:hidden" fill={isCrush ? "currentColor" : "none"} />
+          <span className="hidden sm:inline">{isCrush ? 'Crushed!!' : 'Crush'}</span>
+          <span className="sm:hidden">{isCrush ? '💖' : '♡'}</span>
+        </button>
         <div className="relative">
           <button
             type="button"

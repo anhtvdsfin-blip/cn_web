@@ -160,85 +160,85 @@ export default function Community() {
     // ✅ FIXED: Filter post:new từ người bị chặn
     socket.on('post:new', (post) => {
       const postAuthorId = (post.userId?._id || post.userId?.id || post.userId)?.toString();
-      
-      // Check nếu author bị chặn thì không thêm vào feed
-      if (!blockedUsers.includes(postAuthorId)) {
-        console.log('✅ Adding new post from:', post.userId?.name);
-        setPosts(prev => {
-          // Tránh duplicate nếu bài đăng này là của chính mình
-          if (prev.some(p => p._id === post._id)) return prev;
-          return [post, ...prev];
-        });
-      } else {
-        console.log('🚫 Blocked new post from:', post.userId?.name, postAuthorId);
-      }
-    });
+      const currentUserId = userId?.toString();
+      
+      console.log('📥 Socket post:new received:', post._id, 'from:', post.userId?.name, 'author:', postAuthorId, 'currentUser:', currentUserId);
+      
+      // ⛔ IGNORE nếu post này là của CHÍNH MÌNH (đã optimistic update rồi)
+      if (postAuthorId === currentUserId) {
+        console.log('⏭️ Skipping own post from socket (already added via optimistic update)');
+        return;
+      }
+      
+      // Check nếu author bị chặn thì không thêm vào feed
+      if (!blockedUsers.includes(postAuthorId)) {
+        console.log('✅ Adding new post from:', post.userId?.name);
+        setPosts(prev => {
+          // Tránh duplicate nếu bài đăng này đã tồn tại
+          if (prev.some(p => p._id === post._id)) {
+            console.log('⏭️ Post already exists, skipping');
+            return prev;
+          }
+          return [post, ...prev];
+        });
+      } else {
+        console.log('🚫 Blocked new post from:', post.userId?.name, postAuthorId);
+      }
+    });
 
-    // ✅ NEW: Real-time delete post
-    socket.on('post:delete', postId => {
-      console.log('🗑️ Real-time: Post deleted:', postId);
-      setPosts(prev => prev.filter(p => p._id !== postId));
-    });
+    // ✅ NEW: Real-time delete post
+    socket.on('post:delete', postId => {
+      console.log('🗑️ Real-time: Post deleted:', postId);
+      setPosts(prev => prev.filter(p => p._id !== postId));
+    });
 
-    // ✅ NEW: Real-time delete comment
-    socket.on('comment:delete', ({ commentId, postId, deletedBy }) => {
-      // ⛔ BỎ QUA nếu chính mình xóa (đã optimistic update rồi)
-      if (deletedBy?.toString() === userId?.toString()) return;
+    // ✅ NEW: Real-time delete comment
+    socket.on('comment:delete', ({ commentId, postId, deletedBy }) => {
+      // ⛔ BỎ QUA nếu chính mình xóa (đã optimistic update rồi)
+      if (deletedBy?.toString() === userId?.toString()) return;
 
-      console.log('🗑️ Realtime comment delete from other user');
+      console.log('🗑️ Realtime comment delete from other user');
 
-      setPosts(prev =>
-        prev.map(p =>
-          p._id === postId
-            ? {
-                ...p,
-                commentCount: Math.max(0, (p.commentCount || 0) - 1),
-                comments: p.comments?.filter(c => c._id !== commentId)
-              }
-            : p
-        )
-      );
-    });
-    return () => {
-      socket.off('post:like');
-      socket.off('post:comment');
-      socket.off('notification:new');
-      socket.off('post:new');
-      socket.off('post:delete');
-      socket.off('comment:delete');
-    };
-  }, [userId, blockedUsers, socket, setNotifications, setUnreadCount]); 
-    
-  // ==============================
-  // BLOCK OR REPORT - giữ nguyên
-  // ==============================
-  const handleBlockOrReport = async (targetUser, type) => {
-    if (actionLoading) return;
-    
-    // ✅ Lấy ID chính xác từ target user object
-    const targetId = (targetUser?._id || targetUser?.id || targetUser)?.toString();
-    const targetName = targetUser?.name || 'người dùng này';
-    
-    if (!targetId) {
-        console.error('❌ Invalid targetId:', targetUser);
-        toast.error("Không tìm thấy thông tin người dùng cần chặn.");
-        return;
-    }
-    
-    const currentUserId = (storedUser?.id || storedUser?._id)?.toString();
+      setPosts(prev =>
+        prev.map(p =>
+          p._id === postId
+            ? {
+                ...p,
+                commentCount: Math.max(0, (p.commentCount || 0) - 1),
+                comments: p.comments?.filter(c => c._id !== commentId)
+              }
+            : p
+        )
+      );
+    });
 
-    if (!currentUserId) {
-        toast.error("Vui lòng đăng nhập để thực hiện hành động này.");
-        return;
-    }
-    
-    // Không thể block/report chính mình
-    if (currentUserId === targetId) {
-        toast.error("Bạn không thể thực hiện hành động này với chính mình.");
-        return;
-    }
-    
-    // Xác nhận block
+    return () => {
+      socket.off('post:like');
+      socket.off('post:comment');
+      socket.off('notification:new');
+      socket.off('post:new');
+      socket.off('post:delete');
+      socket.off('comment:delete');
+    };
+  }, [userId, blockedUsers, socket, setNotifications, setUnreadCount]);
+    
+  // ==============================
+  // BLOCK OR REPORT
+  // ==============================
+  const handleBlockOrReport = async (targetUser, type) => {
+    if (actionLoading) return;
+    
+    // ✅ Lấy ID chính xác từ target user object
+    const targetId = (targetUser?._id || targetUser?.id || targetUser)?.toString();
+    const targetName = targetUser?.name || 'người dùng này';
+    const currentUserId = (storedUser?.id || storedUser?._id)?.toString();
+
+    if (!currentUserId) {
+      toast.error('Vui lòng đăng nhập');
+      return;
+    }
+    
+    // Xác nhận block
     if (type === 'block') {
         const confirmBlock = window.confirm(
             `Bạn có chắc chắn muốn CHẶN ${targetName} không?\nBạn sẽ không thấy bài viết/bình luận của họ nữa.`
@@ -373,9 +373,16 @@ export default function Community() {
 			const data = await res.json();
 			const newPost = data.post; 
       
+			console.log('📝 New post created:', newPost._id, 'createdAt:', newPost.createdAt);
+      
 			// ✅ FIX REALTIME: Cập nhật state posts ngay lập tức
 			if (newPost) {
-				setPosts(prev => [newPost, ...prev]);
+				setPosts(prev => {
+					console.log('📊 Current posts count:', prev.length);
+					console.log('📊 First post createdAt:', prev[0]?.createdAt);
+					console.log('📊 New post createdAt:', newPost.createdAt);
+					return [newPost, ...prev];
+				});
 			}
 
 			setContent('');
@@ -440,56 +447,55 @@ export default function Community() {
   // ==============================
   // CREATE COMMENT - giữ nguyên
   // ==============================
-const createComment = async (postId) => {
-  const text = commentText[postId];
-  if (!text || !text.trim()) {
-    toast.error('Vui lòng nhập bình luận');
-    return;
-  }
+  const createComment = async (postId) => {
+    const text = commentText[postId];
+    if (!text || !text.trim()) {
+      toast.error('Vui lòng nhập bình luận');
+      return;
+    }
 
-  try {
-    setCommentText(prev => ({ ...prev, [postId]: '' }));
+    try {
+      setCommentText(prev => ({ ...prev, [postId]: '' }));
 
-    const res = await fetch(`${API_URL}/api/posts/${postId}/comments`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId,
-        content: text
-      }),
-    });
+      const res = await fetch(`${API_URL}/api/posts/${postId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          content: text
+        }),
+      });
 
-    const data = await res.json();
+      const data = await res.json();
 
-    if (!data.success) {
-      throw new Error(data.error || 'Lỗi bình luận');
-    }
+      if (!data.success) {
+        throw new Error(data.error || 'Lỗi bình luận');
+      }
 
-    // ✅ Optimistic update: thêm comment vào ngay nếu chưa có trong state
-    setPosts(prev =>
-      prev.map(p => {
-        if (p._id !== postId) return p;
+      // ✅ Optimistic update: thêm comment vào ngay nếu chưa có trong state
+      setPosts(prev =>
+        prev.map(p => {
+          if (p._id !== postId) return p;
 
-        const existingComments = p.comments || [];
-        const isDuplicate = existingComments.some(c => c._id === data.comment._id);
+          const existingComments = p.comments || [];
+          const isDuplicate = existingComments.some(c => c._id === data.comment._id);
 
-        if (isDuplicate) return p;
+          if (isDuplicate) return p;
 
-        return {
-          ...p,
-          comments: [...existingComments, data.comment],
-          commentCount: (p.commentCount || 0) + 1
-        };
-      })
-    );
+          return {
+            ...p,
+            comments: [...existingComments, data.comment],
+            commentCount: (p.commentCount || 0) + 1
+          };
+        })
+      );
 
-    toast.success('Bình luận thành công!');
-  } catch (err) {
-    console.error('Create comment error:', err);
-    toast.error(err.message || 'Lỗi bình luận');
-  }
-};
-
+      toast.success('Bình luận thành công!');
+    } catch (err) {
+      console.error('Create comment error:', err);
+      toast.error(err.message || 'Lỗi bình luận');
+    }
+  };
 
   // ==============================
   // DELETE POST - giữ nguyên
@@ -849,5 +855,5 @@ const createComment = async (postId) => {
         )}
       </div>
     </div>
-  );
+  );
 }

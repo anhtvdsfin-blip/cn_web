@@ -1,6 +1,7 @@
 //chat.jsx
 import { useEffect, useState, useRef, useContext } from "react";
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { SocketContext } from "../contexts";
 import Navbar from '../components/Navbar';
 
@@ -16,6 +17,7 @@ export default function RandomChat() {
   const [input, setInput] = useState("");
   const [compatibilityScore, setCompatibilityScore] = useState(null);
   const API_URL = import.meta.env.VITE_API_URL;
+  const [showEndChatConfirm, setShowEndChatConfirm] = useState(false);
 
   
   // ✅ TIMER STATE
@@ -40,14 +42,14 @@ export default function RandomChat() {
   useEffect(() => {
     const userDataString = sessionStorage.getItem("user");
     if (!userDataString) {
-      alert("Vui lòng đăng nhập!");
+      toast.error("Vui lòng đăng nhập!");
       return;
     }
     
     const userData = JSON.parse(userDataString);
     
     if (!userData.id || !userData.gender || !userData.age) {
-      alert("Vui lòng hoàn thiện thông tin cá nhân!");
+      toast.error("Vui lòng hoàn thiện thông tin cá nhân!");
       return;
     }
     
@@ -90,7 +92,7 @@ const navigate = useNavigate();
   // ===== CHAT EXPIRED =====
   socket.on("chat_expired", ({ message }) => {
     setIsExpired(true);
-    alert(message || "Thời gian chat đã hết! Hãy like để tiếp tục.");
+    toast.error(message || "Thời gian chat đã hết! Hãy like để tiếp tục.");
   });
 
   // ===== RECEIVE TEMP MESSAGE =====
@@ -119,7 +121,7 @@ const navigate = useNavigate();
     if (!convId) {
       console.error("❌ No conversationId/matchId in mutual_match event!", payload);
       // don't block; show a lightweight notification and return
-      alert("❌ Lỗi: Không nhận được conversationId/matchId từ server. Hãy thử tải lại.");
+      toast.error("❌ Lỗi: Không nhận được conversationId/matchId từ server. Hãy thử tải lại.");
       return;
     }
 
@@ -127,7 +129,7 @@ const navigate = useNavigate();
     setConversationId(convId);
     setIsExpired(false);
 
-    alert(message || "🎉 Cả hai đã thích nhau! Giờ bạn có thể chat vĩnh viễn!");
+    toast.success(message || "🎉 Cả hai đã thích nhau! Giờ bạn có thể chat vĩnh viễn!");
 
     // Navigate to messenger for this match
     console.log(`🚀 Navigating to /messenger/${convId}`);
@@ -153,7 +155,7 @@ const navigate = useNavigate();
 
   // ===== PARTNER DISCONNECTED =====
   socket.on("partner_disconnected", () => {
-    alert("Người kia đã rời khỏi cuộc trò chuyện!");
+    toast.error("Người kia đã rời khỏi cuộc trò chuyện!");
     resetChat();
   });
 
@@ -190,7 +192,7 @@ const navigate = useNavigate();
   // ===== FIND PARTNER =====
   const handleFindPartner = () => {
     if (!socket || !user) {
-      alert("Chưa kết nối socket hoặc thiếu thông tin user");
+      toast.error("Chưa kết nối socket hoặc thiếu thông tin user");
       return;
     }
 
@@ -226,7 +228,7 @@ const navigate = useNavigate();
     
     // Kiểm tra nếu hết thời gian và chưa match
     if (isExpired && !isMatched) {
-      alert("Thời gian chat đã hết! Hãy like để tiếp tục.");
+      toast.error("Thời gian chat đã hết! Hãy like để tiếp tục.");
       return;
     }
 
@@ -285,15 +287,18 @@ const navigate = useNavigate();
 
   // ===== END CHAT =====
   const handleEndChat = () => {
-    if (window.confirm("Bạn có chắc muốn kết thúc cuộc trò chuyện?")) {
-      if (socket) {
-        socket.disconnect();
-        setTimeout(() => {
-          socket.connect();
-        }, 100);
-      }
-      resetChat();
+    setShowEndChatConfirm(true);
+  };
+
+  const handleConfirmEndChat = () => {
+    setShowEndChatConfirm(false);
+    if (socket) {
+      socket.disconnect();
+      setTimeout(() => {
+        socket.connect();
+      }, 100);
     }
+    resetChat();
   };
 
   // ===== FORMAT TIME =====
@@ -312,13 +317,13 @@ const navigate = useNavigate();
   };
 
   return (
-    <div className={`${pastelGradient} min-h-screen pb-24 pt-28`}>
+    <div className={`${pastelGradient} min-h-screen pb-24 pt-20`}>
       <Navbar />
 
-      <div className="relative z-10 mx-auto max-w-6xl px-4">
-        <div className="grid gap-8 lg:grid-cols-[320px,1fr,320px]">
-          {/* Left sidebar */}
-          <aside className="space-y-6 rounded-[24px] border border-rose-100 bg-white p-5 shadow-sm">
+      <div className="relative z-10 mx-auto max-w-6xl px-2 sm:px-4">
+        <div className="grid gap-4 sm:gap-8 lg:grid-cols-[320px,1fr,320px]">
+          {/* Left sidebar - Hidden on mobile */}
+          <aside className="hidden lg:block space-y-6 rounded-[24px] border border-rose-100 bg-white p-5 shadow-sm">
             <div className="text-sm font-semibold text-rose-600">Tài khoản</div>
             {user ? (
               <div className="flex flex-col items-center gap-3">
@@ -333,10 +338,10 @@ const navigate = useNavigate();
           </aside>
 
           {/* Main chat column (existing header/find/chat UI preserved) */}
-          <main>
-            <div className="text-center mb-12">
-              <h1 className="text-3xl font-extrabold text-rose-900">💬 Random Chat</h1>
-              <p className="text-sm text-rose-700/80">Trò chuyện 3 phút - Like để chat vĩnh viễn</p>
+          <main className="w-full">
+            <div className="text-center mb-6 sm:mb-12">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-rose-900">💬 Random Chat</h1>
+              <p className="text-xs sm:text-sm text-rose-700/80">Trò chuyện 3 phút - Like để chat vĩnh viễn</p>
             </div>
 
             {/* original content (finding / chatting) */}
@@ -378,39 +383,39 @@ const navigate = useNavigate();
                 </div>
               </div>
             ) : (
-              <div className="group relative">
+              <div className="w-full">
                 <div className="relative bg-white rounded-2xl shadow-md overflow-hidden">
-                  <div className="bg-rose-50 p-4 border-b">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center text-2xl">{partner.gender === 'Nam' ? '👨' : partner.gender === 'Nữ' ? '👩' : '🧑'}</div>
-                        <div className="min-w-0">
-                          <h3 className="font-semibold text-slate-800 truncate">{partner.name}</h3>
+                  <div className="bg-rose-50 p-3 sm:p-4 border-b">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white flex items-center justify-center text-xl sm:text-2xl flex-shrink-0">{partner.gender === 'Nam' ? '👨' : partner.gender === 'Nữ' ? '👩' : '🧑'}</div>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="font-semibold text-slate-800 truncate text-sm sm:text-base">{partner.name}</h3>
                           <p className="text-xs text-slate-500 truncate">{partner.gender} • {partner.age} tuổi{partner.hometown ? ` • ${partner.hometown}` : ''}</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
                         {!isMatched && (
-                          <button onClick={handleLike} disabled={iLiked} className="px-3 py-2 bg-rose-500 text-white rounded-xl text-sm">{iLiked ? 'Đã like' : 'Like'}</button>
+                          <button onClick={handleLike} disabled={iLiked} className="px-2 sm:px-3 py-1.5 sm:py-2 bg-rose-500 text-white rounded-xl text-xs sm:text-sm whitespace-nowrap">{iLiked ? 'Đã like' : 'Like'}</button>
                         )}
-                        <button onClick={handleEndChat} className="px-3 py-2 bg-slate-200 text-sm rounded-xl">Kết thúc</button>
+                        <button onClick={handleEndChat} className="px-2 sm:px-3 py-1.5 sm:py-2 bg-slate-200 text-xs sm:text-sm rounded-xl whitespace-nowrap">Kết thúc</button>
                       </div>
                     </div>
                   </div>
 
-                  <div className="h-[420px] overflow-y-auto p-6 bg-white">
+                  <div className="h-[350px] sm:h-[420px] overflow-y-auto p-3 sm:p-6 bg-white">
                     {messages.length === 0 && (
-                      <div className="text-center text-slate-500 mt-12">
-                        <div className="text-6xl mb-4">👋</div>
-                        <h3 className="text-lg font-semibold">Bắt đầu cuộc trò chuyện!</h3>
-                        <p className="text-sm">Bạn có 3 phút để làm quen 💬</p>
+                      <div className="text-center text-slate-500 mt-8 sm:mt-12">
+                        <div className="text-4xl sm:text-6xl mb-3 sm:mb-4">👋</div>
+                        <h3 className="text-base sm:text-lg font-semibold">Bắt đầu cuộc trò chuyện!</h3>
+                        <p className="text-xs sm:text-sm">Bạn có 3 phút để làm quen 💬</p>
                       </div>
                     )}
 
                     {messages.map((msg, index) => (
-                      <div key={index} className={`mb-4 flex ${msg.from === 'me' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-md px-4 py-3 rounded-2xl ${msg.from === 'me' ? 'bg-rose-400 text-white' : 'bg-slate-100 text-slate-800'}`}>
-                          <p className="break-words">{msg.text}</p>
+                      <div key={index} className={`mb-3 sm:mb-4 flex ${msg.from === 'me' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[75%] sm:max-w-md px-3 sm:px-4 py-2 sm:py-3 rounded-2xl ${msg.from === 'me' ? 'bg-rose-400 text-white' : 'bg-slate-100 text-slate-800'}`}>
+                          <p className="break-words text-sm sm:text-base">{msg.text}</p>
                           {msg.time && <p className="text-xs mt-1 text-slate-400">{msg.time}</p>}
                         </div>
                       </div>
@@ -418,18 +423,18 @@ const navigate = useNavigate();
                     <div ref={messagesEndRef} />
                   </div>
 
-                  <div className="p-4 border-t bg-white">
-                    <div className="flex items-center gap-3">
+                  <div className="p-3 sm:p-4 border-t bg-white">
+                    <div className="flex items-center gap-2 sm:gap-3">
                       <input
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         placeholder={isExpired && !isMatched ? '⏰ Hết thời gian! Like để tiếp tục...' : 'Nhập tin nhắn...'}
                         disabled={isExpired && !isMatched}
-                        className="flex-1 px-4 py-2 border rounded-2xl"
+                        className="flex-1 px-3 sm:px-4 py-2 border rounded-2xl text-sm sm:text-base"
                         onKeyPress={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(e); } }}
                       />
-                      <button onClick={handleSendMessage} disabled={!input.trim() || (isExpired && !isMatched)} className="px-4 py-2 bg-rose-500 text-white rounded-2xl">Gửi</button>
+                      <button onClick={handleSendMessage} disabled={!input.trim() || (isExpired && !isMatched)} className="px-3 sm:px-4 py-2 bg-rose-500 text-white rounded-2xl text-sm sm:text-base whitespace-nowrap">Gửi</button>
                     </div>
                   </div>
                 </div>
@@ -437,17 +442,61 @@ const navigate = useNavigate();
             )}
           </main>
 
-          {/* Right sidebar */}
-          <aside className="space-y-6 rounded-[24px] border border-rose-100 bg-white p-5 shadow-sm">
+          {/* Right sidebar - Hidden on mobile */}
+          <aside className="hidden lg:block space-y-6 rounded-[24px] border border-rose-100 bg-white p-5 shadow-sm">
             <div className="text-sm font-semibold text-rose-600">Thông tin cuộc trò chuyện</div>
             <div className="text-sm text-slate-600">
-              <p><strong>Thời gian còn lại:</strong> {isMatched ? '∞' : formatTime(timeRemaining)}</p>
+              <p><strong>Thời gian còn lại:</strong> <span className={getTimerColor()}>{isMatched ? '∞' : formatTime(timeRemaining)}</span></p>
               {compatibilityScore && <p><strong>Độ tương thích:</strong> {compatibilityScore}%</p>}
               <p className="mt-3 text-xs text-slate-400">Gợi ý: Like để kết nối dài hạn.</p>
             </div>
           </aside>
+
+          {/* Mobile info panel - Show only when chatting */}
+          {partner && (
+            <div className="lg:hidden col-span-full">
+              <div className="bg-white rounded-2xl p-4 shadow-sm border border-rose-100">
+                <div className="flex items-center justify-between text-sm">
+                  <div>
+                    <span className="font-semibold text-rose-600">Thời gian: </span>
+                    <span className={getTimerColor()}>{isMatched ? '∞' : formatTime(timeRemaining)}</span>
+                  </div>
+                  {compatibilityScore && (
+                    <div>
+                      <span className="font-semibold text-rose-600">Độ tương thích: </span>
+                      <span>{compatibilityScore}%</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* ===== END CHAT CONFIRM MODAL ===== */}
+      {showEndChatConfirm && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-rose-950/55 backdrop-blur-sm">
+          <div className="relative w-full max-w-sm overflow-hidden rounded-[20px] border border-rose-100 bg-white p-6 shadow-lg">
+            <h3 className="text-lg font-semibold text-slate-900">Kết thúc cuộc trò chuyện?</h3>
+            <p className="mt-2 text-sm text-slate-600">Bạn chắc chắn muốn rời khỏi cuộc trò chuyện này?</p>
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={() => setShowEndChatConfirm(false)}
+                className="flex-1 rounded-full border border-rose-100 bg-white px-4 py-2 text-sm text-rose-600 hover:bg-rose-50"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleConfirmEndChat}
+                className="flex-1 rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-600"
+              >
+                Kết thúc
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ===== CSS ANIMATIONS ===== */}
       <style>{`
