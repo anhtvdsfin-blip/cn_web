@@ -96,7 +96,7 @@ export default function Navbar({ user: controlledUser, socket, unreadCount = 0 }
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-rose-100 text-rose-500">
             <Heart className="h-4 w-4" />
           </span>
-          <span className="tracking-tight">HUSTLove</span>
+          <span className="tracking-tight">HUSTYEU</span>
         </Link>
 
         <div className="hidden items-center justify-center md:flex">
