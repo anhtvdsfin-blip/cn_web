@@ -1243,29 +1243,15 @@ export default function CompleteProfile() {
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Đối tượng ưu tiên
               </span>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {[
-                  { value: 'All', label: 'Tất cả' },
-                  { value: 'Male', label: 'Nam' },
-                  { value: 'Female', label: 'Nữ' },
-                ].map((option) => {
-                  const isActive = formData.preferences.lookingFor === option.value;
-                  return (
-                    <button
-                      type="button"
-                      key={option.value}
-                      onClick={() => updatePreference('lookingFor', option.value)}
-                      className={`rounded-2xl border px-4 py-2.5 text-sm font-semibold transition focus:outline-none focus:ring-4 focus:ring-rose-100 ${
-                        isActive
-                          ? 'border-rose-400 bg-white text-rose-500 shadow-sm'
-                          : 'border-rose-100 bg-white/90 text-slate-500 hover:border-rose-200'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
+              <select
+                value={formData.preferences.lookingFor || 'All'}
+                onChange={(e) => updatePreference('lookingFor', e.target.value)}
+                className="w-full rounded-2xl border border-rose-100 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition focus:border-rose-300 focus:outline-none focus:ring-4 focus:ring-rose-100 cursor-pointer"
+              >
+                <option value="All">Tất cả</option>
+                <option value="Male">Nam</option>
+                <option value="Female">Nữ</option>
+              </select>
               {errors['preferences.lookingFor'] && (
                 <p className="text-sm text-rose-500">{errors['preferences.lookingFor']}</p>
               )}

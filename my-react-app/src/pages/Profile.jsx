@@ -613,14 +613,16 @@ export default function Profile() {
                 <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-rose-400">
                   <Target className="h-3.5 w-3.5" /> Đối tượng mong muốn
                 </span>
-                <input
-                  type="text"
+                <select
                   disabled={!isEditing}
                   value={formData.lookingFor}
                   onChange={(event) => handleFieldChange('lookingFor', event.target.value)}
-                  className="w-full rounded-3xl border border-rose-100 bg-white px-5 py-3 text-sm text-slate-700 shadow-sm transition focus:border-rose-300 focus:outline-none focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed"
-                  placeholder="Ví dụ: Kết bạn, đồng hành học tập"
-                />
+                  className="w-full rounded-3xl border border-rose-100 bg-white px-5 py-3 text-sm text-slate-700 shadow-sm transition focus:border-rose-300 focus:outline-none focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  <option value="Tất cả">Tất cả</option>
+                  <option value="Nam">Nam</option>
+                  <option value="Nữ">Nữ</option>
+                </select>
               </label>
               <label className="space-y-2 text-sm font-semibold text-slate-600">
                 <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-rose-400">
